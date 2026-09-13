@@ -659,11 +659,15 @@ def cycle(vault, names, capture_only, pool, telemetry_pool):
                 raise ValueError('invalid_worker_observation')
             observed[i['id']] = obs
             lease = leases.get(i['id'])
-            if not capture_only and lease and obs.get('renewed') and obs.get('public_ip') == lease['ip']:
+            if not capture_only and lease and obs.get('public_ip') == lease['ip']:
                 saved = vault.get(lease['profile'])
                 if saved and identity(obs['store']) == identity(saved[1]['store']):
-                    from kms_nodes import authorize
-                    authorize(vault,i,lease['profile'],obs['scope'],lease['ip'])
+                    if obs.get('renewed'):
+                        from kms_nodes import authorize
+                        authorize(vault,i,lease['profile'],obs['scope'],lease['ip'])
+                    # Start telemetry while other inspections finish, so its
+                    # result can travel with this cycle's permission update.
+                    provider_status(vault,lease['profile'],saved[1]['store'],obs,telemetry_pool)
             if lease and not capture_only and not obs.get('renewed'):
                 # Keep the possible lifetime of every packet already sent.
                 # Stop blind renewals after rejection so changed-IP/runtime
@@ -784,9 +788,11 @@ def cycle(vault, names, capture_only, pool, telemetry_pool):
             # Decision order survives asynchronous SSH delivery. A queued old
             # grant cannot acquire a newer sequence after a later hold is sent.
             payload['sequence'] = vault.sequence()
-            def hook(s=scope, p=profile, o=obs, packet=payload):
+            def hook(s=scope, p=profile, o=obs, packet=payload, store=saved[1]['store']):
                 packet['until'] = o['boot_time']+lease_clock()-o['controller_received_tick']+LEASE_SECONDS
                 vault.extend(s['instance'],p,s['runtime'],o['public_ip'])
+                if packet['action']=='allow':
+                    packet['provider']=provider_status(vault,p,store,o,telemetry_pool)
             actions[pool.submit(exchange, i, vault.access, payload, hook)] = (i, payload['action'])
         except Exception as error:
             row['error'] = str(error) if type(error) is ValueError else type(error).__name__
