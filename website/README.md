@@ -1,9 +1,8 @@
 # WDI website
 
-The existing dashboard runs as a private Unix-socket origin on Mumbai from
-`/opt/wdi/website`. The public Cloudflare connector remains on `mumbai-old` until
-an owner-authorized cutover. The origin keeps the existing Access audience,
-issuer and trusted connector UID; it has no TCP listener.
+The public WDI dashboard runs on Mumbai from `/opt/wdi/website` through
+`cloudflared-salad`. The origin keeps the existing Access audience, issuer and
+trusted connector UID; it listens only on its protected Unix socket.
 
 Run commands and the retained data paths are in the root `AGENTS.md`.
 `install.sh` installs the website units after the histories have been restored.
@@ -50,7 +49,21 @@ establish residential status. The website retains `ip_classified` and
 ledger. These container events keep their source identities and do not invent
 an application run or any traffic. The website has no reallocation authority.
 
-Keep the original snapshot checksum manifest on Mumbai at
-`/var/lib/wdi-website-migration/source-manifest.json`. Before any public cutover,
-catch up the old host's still-active history writers and reconcile collection
-ownership; the initial migration snapshot is not an ongoing mirror.
+The old instance `i-0491397473a219afa` is terminated. Its final encrypted EBS
+snapshot is `snap-018b0f9f57148fc2d`. Website histories and legacy collection
+cursors were reconciled before the connector moved. The snapshot manifest and
+final legacy status files remain under `/var/lib/wdi-website-migration/`.
+
+`salad-public-flow` and `salad-public-flow-publish` maintain the existing anonymous
+aggregate. Separate app counters may share a container; overlapping interface
+or duplicate app counters are rejected. Their credentials and the Cloudflare
+tunnel token are restricted host files, excluded from source control. Restore those credentials and the data before
+using `install.sh`; the `cloudflared` ARM64 executable is installed at
+`/usr/local/bin/cloudflared`.
+
+Traffic tables show decimal MB to six decimal places (one-byte precision).
+A partial window means observations are missing; the approximation marker means
+bytes were apportioned across a time boundary. Repocket's credited and pending
+account totals come directly from its reporting API, separately from measured
+process traffic. The latest provider capture is a dated connected-browser
+snapshot; it must not be presented as a continuously collected provider feed.

@@ -1,5 +1,11 @@
 # WDI
 
+## Do not interrupt active tasks
+
+- A message to another task is an interrupt. Read its latest turns before sending anything. While it is working, hold routine findings, reminders, plans and status questions; continue your assigned work and collect its final result.
+- Interrupt only to prevent immediate loss or an imminent shared-file/host collision, or to relay an explicit owner order that must reach that task now. Frustration, “move faster”, and silence are not emergencies. Do not reinterpret them as permission to interrupt.
+- Send one necessary issue in a few lines. Do not repeat it or chase a reply. A message does not change the recipient's task; only the owner does. Verify relayed claims before acting.
+
 The deliverable is the working product. Keep its complete implementation small, clear and fast. Working bloat is rejected.
 
 ## Build and simplify
@@ -25,12 +31,6 @@ The deliverable is the working product. Keep its complete implementation small, 
 - Use the owner-started task chip. Use sub-agents only for narrow fact lookups, never building, measuring, running or reviewing.
 - Do not let workers edit the same file or control the same live process concurrently. Use no more tasks than independent pieces of work.
 - Do not create extra tasks for test suites, reports, compulsory reviews or progress chatter. Collect one completed result from each task.
-
-## Do not interrupt active work
-
-- Read the receiving task's latest turns before sending a message. Interrupt only for immediate money risk, an imminent file or host collision, or an urgent owner instruction.
-- Hold routine findings, plans and status messages until that task finishes. Send one urgent issue in a few lines; do not repeat messages or chase replies.
-- Only the owner can change another task's assignment. Check relayed claims against the actual source or system before acting on them.
 
 ## Finish the product
 
@@ -66,7 +66,7 @@ Write rules about how agents work, not about today's code. Keep changing task pl
 - AWS account: `163092837436`.
 - AWS region: `ap-south-1` (Mumbai).
 - Current server: `i-0c2e48a7ddc2dd010`, SSH alias `mumbai`.
-- Old server: `i-0491397473a219afa`, SSH alias `mumbai-old`.
+- Retired server: `i-0491397473a219afa` is terminated. Its encrypted final disk snapshot is `snap-018b0f9f57148fc2d`. Do not use `mumbai-old` for operations.
 - Current IAM role: `mumbai-clean`.
 - Administration: AWS SSM, CLI profile `default`.
 - Salad secret: AWS Secrets Manager `wdi/salad-access`.
@@ -79,13 +79,13 @@ Write rules about how agents work, not about today's code. Keep changing task pl
 
 ## Website operation
 
-- Website source is `website/`; the private Mumbai origin is `/opt/wdi/website`.
+- Website source is `website/`; the public WDI site is served from `/opt/wdi/website` on `mumbai` through `cloudflared-salad`.
 - The origin listens only on `/run/salad-ui/ui.sock`. Keep the existing Cloudflare Access issuer/audience and the `cloudflared-salad` peer-UID check. Do not expose a TCP origin or start a second connector as a migration shortcut.
 - Retained histories and collector cursors live in `/home/salad/.hg1`; the IP evidence index and lookup cache live in `/var/lib/salad-ip-evidence` and `/var/lib/salad-ip-enrichment`. Preserve these paths and source/group/run identities during deployment.
 - App control remains in `grass.service` and the app owners' deployment tools. Website collectors only read Salad inventory/logs and write website data. They must not launch, stop, reallocate, register or refresh app credentials.
 - Current Grass and Repocket graph traffic requires application-scoped records. Shared `eth0` counters remain raw observations, never duplicate app traffic. Missing application bytes stay unavailable. Archived container measurements retain their original scope; provider account credits remain separate.
-- Use `ssh mumbai` and `ssh mumbai-old` for unprivileged inspection. Root administration uses AWS SSM `AWS-RunShellScript`, profile `default`, region `ap-south-1`; these SSH accounts do not have passwordless sudo.
+- Use `ssh mumbai` for unprivileged inspection. Root administration uses AWS SSM `AWS-RunShellScript`, profile `default`, region `ap-south-1`; these SSH accounts do not have passwordless sudo.
 - Stage source with `rsync -az --exclude=__pycache__ website/ mumbai:/home/ubuntu/wdi-website-source/`. Through SSM, copy it with `rsync -a /home/ubuntu/wdi-website-source/ /opt/wdi/website/`, then run `/opt/wdi/website/install.sh` after restoring the retained data.
 - Inspect website services with `systemctl status salad-dashboard salad-ip-evidence salad-ip-enrichment wdi-grass-collector wdi-repocket-collector --no-pager`. Their logs are in `journalctl -u UNIT`; the website deployment command records its initiator, reason and instance in `journalctl -t wdi-website`.
 - Snapshot live SQLite databases with Python `sqlite3.Connection.backup`, not a bare copy of a database with an active WAL. Preserve JSON/JSONL histories, deployment metadata and cursor files as well. Encrypt host-to-host archives; verify each restored file against its snapshot checksum and run `PRAGMA quick_check` before starting writers. Standalone WAL snapshots without sidecars must be switched to `journal_mode=DELETE` for the read-only origin; active collectors reopen their own databases in WAL mode.
-- Keep the public connector on `mumbai-old` until the owner authorizes cutover. Complete a final data catch-up and coordinate a single collector owner before retiring that host. Public cutover and retirement require the owner's instruction.
+- The only public connector and active website collectors run on `mumbai`. Connector credentials are in `/etc/cloudflared-salad/tunnel.token`; the anonymous publisher uses `/etc/cosmosgeek-public-metrics/push.token`. Preserve their restricted permissions. Final legacy cursors/status are retained under `/var/lib/wdi-website-migration/mumbai-old-final`.

@@ -78,16 +78,15 @@ class Aggregate:
         self.start = None
         self.end = None
         self.ips = set()
-        self.instances = set()
+        self.owners = {}
         self.minutes = {}
 
-    def observe(self, start, end, ip, instance=None):
+    def observe(self, start, end, ip):
         if stamp(start) and stamp(end) and start <= end:
             self.start = min(self.start or start, start)
             self.end = max(self.end or end, end)
         ip = public_ip(ip)
         if ip: self.ips.add(ip)
-        if instance: self.instances.add(instance)
         return ip
 
     def point(self, minute, amount, ip, estimated):
@@ -97,9 +96,10 @@ class Aggregate:
         if ip: p[1].add(ip)
         p[2] |= bool(estimated)
 
-    def interval(self, start, end, amount, ip=None, instance=None, exact=None):
-        ip = self.observe(start, end, ip, instance)
+    def interval(self, start, end, amount, ip=None, instance=None, exact=None, scope='container'):
+        ip = self.observe(start, end, ip)
         if not number(amount) or not stamp(start) or not stamp(end) or end < start: return
+        if instance: self.owners.setdefault(instance, set()).add(scope)
         self.amount += amount; self.count += 1
         if exact is not None:
             self.point(exact, amount, ip, False)
@@ -113,7 +113,7 @@ class Aggregate:
 
     def saved(self):
         return dict(amount=self.amount if self.count else None, start=self.start, end=self.end,
-                    ips=sorted(self.ips), instances=sorted(self.instances),
+                    ips=sorted(self.ips), owners={k: sorted(v) for k, v in self.owners.items()},
                     minutes={str(t): [p[0], sorted(p[1]), p[2]] for t, p in self.minutes.items()})
 
 
@@ -141,7 +141,7 @@ def read_hg(path, now):
     for key, raw in series.items():
         previous = None
         for at, (amount, ip) in sorted(raw.items()):
-            agg.observe(at, at, ip, key[-1])
+            agg.observe(at, at, ip)
             if previous:
                 before, old, old_ip = previous
                 if ip == old_ip and number(old) and number(amount) and amount >= old and 0 < at - before <= GAP_MS:
@@ -160,13 +160,14 @@ def static_source(root, folder, now):
                 amount = row['amount'] if row['valid'] == 1 and row['seq'] > 0 else None
                 agg.interval(row['start_ms'], row['end_ms'], amount, row['ip'], row['instance'], row['bucket_ms'])
         elif folder == 'repocket':
-            for row in db.execute("SELECT start_ms,end_ms,rx_bytes+tx_bytes amount,ip,instance,valid,json_extract(body,'$.partial') partial,json_extract(body,'$.final') final FROM events WHERE kind='minute'"):
+            for row in db.execute("SELECT start_ms,end_ms,rx_bytes+tx_bytes amount,ip,instance,valid,json_extract(body,'$.partial') partial,json_extract(body,'$.final') final,json_extract(body,'$.traffic_scope') scope,json_extract(body,'$.application') application FROM events WHERE kind='minute'"):
                 s, e = row['start_ms'], row['end_ms']
-                agg.observe(s, e, row['ip'], row['instance'])
+                agg.observe(s, e, row['ip'])
                 if row['valid'] != 1 or not stamp(s) or not stamp(e): continue
                 bucket = round(s / MINUTE) * MINUTE
                 exact = not row['partial'] and not row['final'] and 59000 <= e - s <= 61000 and abs(s - bucket) <= 1000
-                agg.interval(bucket if exact else s, bucket + MINUTE if exact else e, row['amount'], row['ip'], row['instance'], bucket if exact else None)
+                scope = 'application:repocket' if row['scope'] == 'application' and row['application'] == 'repocket' else 'container'
+                agg.interval(bucket if exact else s, bucket + MINUTE if exact else e, row['amount'], row['ip'], row['instance'], bucket if exact else None, scope)
         elif folder == 'earnfm':
             for row in db.execute('SELECT time_ms,rx+tx amount,ip,instance,estimated FROM minute_cache'):
                 agg.interval(row['time_ms'], row['time_ms'] + MINUTE, row['amount'], row['ip'], row['instance'], None if row['estimated'] else row['time_ms'])
@@ -177,10 +178,12 @@ def static_source(root, folder, now):
                 minute = row['time_ms'] // MINUTE * MINUTE
                 agg.interval(minute, minute + MINUTE, row['amount'], row['ip'], row['instance'])
         elif folder == 'grass':
-            for row in db.execute('SELECT first_ms,last_ms,bytes,ip,instance,duration_ms FROM run_ips'):
-                agg.observe(row['first_ms'], row['last_ms'], row['ip'], row['instance'])
+            for row in db.execute('SELECT r.first_ms,r.last_ms,r.bytes,r.ip,r.instance,r.duration_ms,m.scope FROM run_ips r LEFT JOIN measurement_groups m ON m.group_id=r.group_id'):
+                agg.observe(row['first_ms'], row['last_ms'], row['ip'])
                 if row['duration_ms'] > 0 and number(row['bytes']):
                     agg.amount += row['bytes']; agg.count += 1
+                    scope = 'application:grass' if row['scope'] == 'application' else 'container'
+                    agg.owners.setdefault(row['instance'], set()).add(scope)
             for row in db.execute('SELECT minute_ms,bytes,ip,estimated FROM minute_nodes WHERE minute_ms>=? AND minute_ms<=? AND coverage_ms>0', (agg.first, agg.last)):
                 if number(row['bytes']): agg.point(row['minute_ms'], row['bytes'], public_ip(row['ip']), row['estimated'])
     return agg.saved()
@@ -269,13 +272,16 @@ def build_payload(sources, view, revision, now, inventory_views=None):
     points, per_ip = [], {}
     available = [s for s in sources.values() if s and number(s.get('amount'))]
     all_ips = set().union(*(s['ips'] for s in available))
-    # Different protocols must not turn one shared network namespace into two
-    # traffic contributions. Fail closed if source identity ownership overlaps.
-    owned = set()
+    # A shared container can contribute separate app counters, but its interface
+    # counter must never be added to another recording of that same traffic.
+    owned = {}
     for s in available:
-        identities = set(s['instances'])
-        if owned & identities: raise ValueError('shared source identity requires reconciliation')
-        owned |= identities
+        for instance, scopes in s['owners'].items():
+            previous = owned.setdefault(instance, set())
+            scopes = set(scopes)
+            if previous and ('container' in previous | scopes or previous & scopes):
+                raise ValueError('shared source identity requires reconciliation')
+            previous.update(scopes)
     for t in range(first, minute + MINUTE, MINUTE):
         found = [s['minutes'][str(t)] for s in available if str(t) in s['minutes']]
         ipset = set().union(*(p[1] for p in found))
@@ -332,23 +338,26 @@ class Producer:
         sources = {}
         for folder in FOLDERS:
             saved = self.cache.get(folder)
-            if not saved or saved['revision'] != tokens[folder]:
+            if not saved or 'owners' not in saved['aggregate'] or saved['revision'] != tokens[folder]:
                 result = static_source(self.root, folder, now)
-                if signature(self.paths(folder)) != tokens[folder]: raise BlockingIOError('source changing')
+                # SQLite readers hold a transaction snapshot while writers continue.
+                if folder == 'hg-fleet' and signature(self.paths(folder)) != tokens[folder]:
+                    raise BlockingIOError('source changing')
                 saved = dict(revision=tokens[folder], aggregate=result)
                 self.cache[folder] = saved
             sources[folder] = saved['aggregate']
-        if not explicit_now:
-            now = int(time.time()*1000)
-            revision = hashlib.sha256(json.dumps([tokens, inventory_tokens, now//MINUTE], sort_keys=True).encode()).hexdigest()
         selected = {}
         for folder, path in inventory_paths.items():
+            inventory_tokens[folder] = signature([path])
             try:
                 selected[folder] = read_json(path)
             except (OSError, ValueError):
                 selected[folder] = None
             if signature([path]) != inventory_tokens[folder]:
                 raise BlockingIOError('inventory publication changing')
+        if not explicit_now:
+            now = int(time.time()*1000)
+        revision = hashlib.sha256(json.dumps([tokens, inventory_tokens, now//MINUTE], sort_keys=True).encode()).hexdigest()
         self.inventory_views = selected
         view = selected.get('grass')
         self.view = view if isinstance(view, dict) else {}
@@ -356,7 +365,7 @@ class Producer:
         if not validate(result, now): raise ValueError('invalid public contract')
         atomic_write(self.state/'private-cache.json', self.cache)
         atomic_write(self.state/'private-reconciliation.json', dict(generated_ms=now, source_totals={k:v['amount'] for k,v in sources.items()},
-                      source_ip_counts={k:len(v['ips']) for k,v in sources.items()}, shared_instances=0,
+                      source_ip_counts={k:len(v['ips']) for k,v in sources.items()},
                       active_view_mb=self.view.get('total_mb'), public_gb=result['recorded_traffic']['gb']))
         atomic_write(self.state/'latest.json', result, 0o644)
         self.last_revision = revision

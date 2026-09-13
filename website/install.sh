@@ -4,7 +4,7 @@ set -eu
 [ "$(id -u)" -eq 0 ] || { echo 'Run through AWS SSM as root' >&2; exit 1; }
 cd /opt/wdi/website
 command -v setfacl >/dev/null
-for account in salad salad-ui cloudflared-salad; do
+for account in salad salad-ui cloudflared-salad salad-flow; do
     getent group "$account" >/dev/null || groupadd --system "$account"
     id "$account" >/dev/null 2>&1 || useradd --system --gid "$account" --home-dir /nonexistent --shell /usr/sbin/nologin "$account"
 done
@@ -24,22 +24,24 @@ for path in Path('/home/salad/.hg1').rglob('*.sqlite3'):
 PYTHON
 chown salad:salad /home/salad
 chmod 750 /home/salad
-setfacl -m u:salad-ui:--x /home/salad
+setfacl -m u:salad-ui:--x,u:salad-flow:--x /home/salad
 chown -R salad:salad /home/salad/.hg1
 chmod -R o-rwx /home/salad/.hg1
-setfacl -R -m u:salad-ui:r-X /home/salad/.hg1
-find /home/salad/.hg1 -type d -exec setfacl -m d:u:salad-ui:r-x {} +
+setfacl -R -m u:salad-ui:r-X,u:salad-flow:r-X /home/salad/.hg1
+find /home/salad/.hg1 -type d -exec setfacl -m d:u:salad-ui:r-x,d:u:salad-flow:r-x {} +
 setfacl -m u:salad-ui:rw /home/salad/.hg1/packetstream/provider-observations.jsonl
 install -d -m 750 -o salad -g salad-ui /var/lib/salad-ip-evidence
 install -d -m 750 -o salad-ui -g salad-ui /var/lib/salad-ip-enrichment
 chown -R salad:salad-ui /var/lib/salad-ip-evidence
 chown -R salad-ui:salad-ui /var/lib/salad-ip-enrichment
 chmod -R g+rX,o-rwx /var/lib/salad-ip-evidence /var/lib/salad-ip-enrichment
+install -d -m 755 -o salad-flow -g salad-flow /var/lib/cosmosgeek-public-flow
 install -m 644 systemd/*.service /etc/systemd/system/
 systemctl daemon-reload
 systemd-analyze verify systemd/*.service
 # Operator and reason are retained in the journal for this website deployment.
 logger -t wdi-website 'Initiator: Codex, owner-authorized website migration; instance: i-0c2e48a7ddc2dd010; action: start/restart website and evidence services'
-systemctl enable salad-dashboard salad-ip-evidence salad-ip-enrichment wdi-grass-collector wdi-repocket-collector
-systemctl restart salad-dashboard salad-ip-evidence salad-ip-enrichment wdi-grass-collector wdi-repocket-collector
-systemctl is-active salad-dashboard salad-ip-evidence salad-ip-enrichment wdi-grass-collector wdi-repocket-collector
+systemctl enable salad-dashboard salad-ip-evidence salad-ip-enrichment wdi-grass-collector wdi-repocket-collector salad-public-flow salad-public-flow-publish
+systemctl restart salad-dashboard salad-ip-evidence salad-ip-enrichment wdi-grass-collector wdi-repocket-collector salad-public-flow salad-public-flow-publish
+systemctl enable --now cloudflared-salad
+systemctl is-active cloudflared-salad salad-dashboard salad-ip-evidence salad-ip-enrichment wdi-grass-collector wdi-repocket-collector salad-public-flow salad-public-flow-publish

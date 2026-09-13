@@ -955,7 +955,7 @@ def provider_metrics(service, data, root, read_view, now):
                           credited_mb=amount(p.get("total_bytes"), "0.000001"), earned_usd=amount(p.get("total_usd_cents"), "0.01"),
                           raw={k: p.get(k) for k in ("total_bytes", "total_usd_cents", "provider_period_start_ms",
                               "pending_bytes", "pending_usd_cents", "account_earned_usd_cents",
-                              "account_credited_usd_cents", "account_withdrawn_usd_cents")},
+                              "account_credited_usd_cents", "account_withdrawn_usd_cents", "report_user_id", "capture_mode")},
                           window={"kind": "account_lifetime_own_bandwidth"},
                           error=read("repocket/provider-status.json").get("error") or p.get("error"))
             if p.get("total_bytes") is None or p.get("total_usd_cents") is None:
@@ -1027,7 +1027,7 @@ def provider_metrics(service, data, root, read_view, now):
     observed = result["observed_ms"]
     max_age = {"hg": 360000, "proxyrack": 900000, "earnapp": 150000}.get(service, 180000)
     result["fresh"] = isinstance(observed, (int, float)) and 0 <= now - observed <= max_age and not result["error"]
-    if result["earned_usd"] is not None and result["credited_mb"] is not None and result["credited_mb"] > 0:
+    if result["fresh"] and result["earned_usd"] is not None and result["credited_mb"] is not None and result["credited_mb"] > 0:
         result["effective_usd_per_gb"] = result["earned_usd"] * 1000 / result["credited_mb"]
     return result
 
