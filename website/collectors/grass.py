@@ -529,8 +529,6 @@ def view(db, inventory, inventory_ms, desired, error=None, history_note=None, no
                 result = recovery.get('phase', recovery.get('last_action', 'requested'))
                 detail = f"Recovery {result}: {recovery.get('last_reason', 'unknown')}; requested at {when}"
                 note = '; '.join(x for x in (note, detail, recovery.get('error')) if x)
-            if not (sample or {}).get('replacement_ready'):
-                note = '; '.join(x for x in (note, 'Machine replacement awaits the initial login backup') if x)
         elif sample and not fresh:
             state, problem = 'Source delayed', 'The latest native sample is stale; current client state is unverified'
         elif fresh and sample.get('revision') == 1:
