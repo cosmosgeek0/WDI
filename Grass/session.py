@@ -13,14 +13,43 @@ import urllib.request
 from pathlib import Path
 
 STATE = Path('/config/xdg/data/io.getgrass.desktop/store.json')
-PERMIT = Path('/config/run/grass-identity.json')
-IP_POLICY = Path('/config/run/ip-policy.json')
+PERMIT = Path('/run/wdi/grass-identity.json')
+IP_POLICY = Path('/run/wdi/ip-policy.json')
 IP_POLICY_REQUIRED = Path('/opt/grass-private/ip_policy.py').is_file()
 MACHINE = Path('/config/run/machine-id')
 LEASE_SECONDS = 300
 IDENTITY_KEYS = ('wynd:device_id', 'wynd:device_privkey', 'wynd:device_pubkey',
                  'wynd:device_registered_user_id', 'wynd:device_registered_pubkey',
                  'wynd:user_id', 'wynd:browser_id')
+
+
+def node_store(store):
+    """Give native Grass an allocation-local key; its real signatures come from KMS."""
+    original = identity(store)
+    if not store.get('wdi:kms_key'):
+        raise ValueError('kms_migration_required')
+    private = os.urandom(32)
+    result = subprocess.run(['openssl','pkey','-inform','DER','-pubout','-outform','DER'],
+        input=bytes.fromhex('302e020100300506032b657004220420')+private,
+        capture_output=True,timeout=5,check=True)
+    public = base64.b64encode(result.stdout[-32:]).decode()
+    value = {key: json.dumps(decoded(store[key])) for key in IDENTITY_KEYS if key!='wynd:device_privkey'}
+    value.update({'wynd:device_privkey':json.dumps(base64.b64encode(private).decode()),
+                  'wynd:device_pubkey':json.dumps(public),'wynd:device_registered_pubkey':json.dumps(public),
+                  'wdi:identity':json.dumps(original,separators=(',',':'))})
+    value.update({key: json.dumps(flag) for key, flag in {
+        'wynd:authenticated': False, 'wynd:permissions': True,
+        'isConnectButtonActive': True}.items()})
+    return value
+
+
+def require_node_store(store):
+    if any(decoded(store.get(key)) not in (None, '', False, 0) for key in (
+            'accessToken', 'refreshToken', 'wynd:jwt', 'lastUsedOAuthToken', 'wynd:authenticated')):
+        raise ValueError('account_credentials_forbidden_on_worker')
+    identity(store)
+    if not isinstance(decoded(store.get('wdi:identity')),dict):
+        raise ValueError('kms_worker_identity_required')
 
 
 def decoded(value):
@@ -38,21 +67,32 @@ def identity(store, pending=False):
     enrolling = pending and values['wynd:device_id'] in (None, '')
     required = (('wynd:device_privkey', 'wynd:device_pubkey', 'wynd:user_id', 'wynd:browser_id')
                 if enrolling else IDENTITY_KEYS)
+    if store.get('wdi:kms_key'):
+        required = tuple(k for k in required if k!='wynd:device_privkey')
     if not all(isinstance(values[key], str) and values[key] for key in required):
         raise ValueError('installation_keys_missing')
     try:
-        private = base64.b64decode(values['wynd:device_privkey'], validate=True)
-        if len(private) != 32:
+        if store.get('wdi:kms_key') and not values['wynd:device_privkey']:
+            public = base64.b64decode(values['wynd:device_pubkey'],validate=True)
+            private_hash = store.get('wdi:private_sha256')
+            if len(public)!=32 or (private_hash is not None and (not isinstance(private_hash,str)
+                    or len(private_hash)!=64 or any(c not in '0123456789abcdef' for c in private_hash))):
+                raise ValueError('invalid_kms_identity')
+            private = None
+        else:
+            private = base64.b64decode(values['wynd:device_privkey'], validate=True)
+        if private is None:
+            pass
+        elif len(private) != 32:
             raise ValueError('invalid_ed25519_seed')
-        # OpenSSL is already in the deployed image. Private bytes travel only
-        # through stdin, never command arguments or a temporary key file.
-        result = subprocess.run(['openssl', 'pkey', '-inform', 'DER', '-pubout', '-outform', 'DER'],
-                                input=bytes.fromhex('302e020100300506032b657004220420') + private,
-                                capture_output=True, timeout=5, check=True)
-        prefix = bytes.fromhex('302a300506032b6570032100')
-        if len(result.stdout) != len(prefix) + 32 or not result.stdout.startswith(prefix):
-            raise ValueError('invalid_ed25519_public_key')
-        public = result.stdout[len(prefix):]
+        else:
+            result = subprocess.run(['openssl', 'pkey', '-inform', 'DER', '-pubout', '-outform', 'DER'],
+                                    input=bytes.fromhex('302e020100300506032b657004220420') + private,
+                                    capture_output=True, timeout=5, check=True)
+            if len(result.stdout) != 44 or not result.stdout.startswith(bytes.fromhex('302a300506032b6570032100')):
+                raise ValueError('invalid_ed25519_public_key')
+            public = result.stdout[-32:]
+            private_hash = hashlib.sha256(private).hexdigest()
     except (ValueError, TypeError, subprocess.SubprocessError):
         raise ValueError('installation_keys_invalid') from None
     public_b64 = base64.b64encode(public).decode()
@@ -64,14 +104,21 @@ def identity(store, pending=False):
     registered_account = values['wynd:device_registered_user_id']
     if registered_account != account and not (enrolling and registered_account in (None, '')):
         raise ValueError('installation_account_mismatch')
-    if enrolling:
-        token = decoded(store.get('accessToken'))
-        if decoded(store.get('wynd:authenticated')) is not True or not isinstance(token, str) or not token:
-            raise ValueError('grass_login_required')
-    return dict(account=account, device=values['wynd:device_id'] or None,
+    observed = dict(account=account, device=values['wynd:device_id'] or None,
                 browser=values['wynd:browser_id'],
                 public_sha256=hashlib.sha256(public).hexdigest(),
-                private_sha256=hashlib.sha256(private).hexdigest())
+                private_sha256=private_hash)
+    reported = decoded(store.get('wdi:identity'))
+    if reported is not None:
+        if (not isinstance(reported,dict) or set(reported)!=set(observed)
+                or any(reported[k]!=observed[k] for k in ('account','device','browser'))
+                or any((reported[k] is None and k!='private_sha256') or
+                       (reported[k] is not None and (not isinstance(reported[k],str) or len(reported[k])!=64
+                        or any(c not in '0123456789abcdef' for c in reported[k])))
+                       for k in ('public_sha256','private_sha256'))):
+            raise ValueError('invalid_worker_identity')
+        return reported
+    return observed
 
 
 def read(path):
@@ -91,45 +138,56 @@ def compatible(local, original):
     return all(decoded(local.get(key)) in (None, '', expected[key]) for key in IDENTITY_KEYS)
 
 
-def save(path, value):
-    owner = Path('/config').stat() if os.geteuid() == 0 else None
-    missing = []
-    parent = path.parent
-    while not parent.exists():
-        missing.append(parent)
-        parent = parent.parent
-    path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
-    if owner:
-        for directory in missing:
-            os.chown(directory, owner.st_uid, owner.st_gid)
-    temporary = path.with_name(path.name + '.restore')
-    fd = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_NOFOLLOW, 0o600)
-    if owner:
-        os.fchown(fd, owner.st_uid, owner.st_gid)
-    with os.fdopen(fd, 'w') as stream:
-        json.dump(value, stream, separators=(',', ':'))
-        stream.flush()
-        os.fsync(stream.fileno())
-    temporary.replace(path)
-    fd = os.open(path.parent, os.O_RDONLY | os.O_DIRECTORY)
+@contextmanager
+def directory(path):
+    """Privileged writes must not follow app-controlled directory symlinks."""
+    if not path.is_absolute() or '..' in path.parts:
+        raise ValueError('absolute_state_path_required')
+    fd = os.open('/', os.O_RDONLY | os.O_DIRECTORY)
     try:
-        os.fsync(fd)
+        for part in path.parts[1:]:
+            try:
+                os.mkdir(part, 0o700, dir_fd=fd)
+                if os.geteuid() == 0 and path.is_relative_to('/config'):
+                    os.chown(part, 1000, 1000, dir_fd=fd, follow_symlinks=False)
+            except FileExistsError:
+                pass
+            child = os.open(part, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=fd)
+            os.close(fd);fd = child
+        yield fd
     finally:
         os.close(fd)
+
+
+def save(path, value):
+    with directory(path.parent) as parent:
+        temporary = path.name + '.restore-' + os.urandom(8).hex()
+        fd = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600, dir_fd=parent)
+        try:
+            if os.geteuid() == 0 and path.is_relative_to('/config'):
+                os.fchown(fd, 1000, 1000)
+            if path in (IP_POLICY, Path('/run/wdi/provider-status.json')):
+                os.fchmod(fd, 0o644)
+            with os.fdopen(fd, 'w') as stream:
+                if path == MACHINE:
+                    stream.write(value)
+                else:
+                    json.dump(value, stream, separators=(',', ':'))
+                stream.flush()
+                os.fsync(stream.fileno())
+            os.rename(temporary, path.name, src_dir_fd=parent, dst_dir_fd=parent)
+            os.fsync(parent)
+        finally:
+            try:os.unlink(temporary, dir_fd=parent)
+            except FileNotFoundError:pass
 
 
 @contextmanager
 def locked():
     """Serialize controller writes with the supervisor's live-start boundary."""
-    new_parent = not PERMIT.parent.exists()
-    PERMIT.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    PERMIT.parent.mkdir(mode=0o755, parents=True, exist_ok=True)
     fd = os.open(PERMIT.with_suffix('.lock'), os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW, 0o600)
     try:
-        if os.geteuid() == 0:
-            owner = Path('/config').stat()
-            if new_parent:
-                os.chown(PERMIT.parent, owner.st_uid, owner.st_gid)
-            os.fchown(fd, owner.st_uid, owner.st_gid)
         fcntl.flock(fd, fcntl.LOCK_EX)
         yield
     finally:
@@ -148,16 +206,6 @@ def runtime():
         raise ValueError('salad_identity_missing')
     scope['runtime'] = f'{boot}:{ticks}'
     account = env.get('GRASS_ACCOUNT_ID')
-    session_file = Path(env.get('GRASS_SESSION_FILE', '/run/secrets/grass-session.json'))
-    encoded = env.get('GRASS_SESSION_B64') or env.get('GRASS_STATE_B64')
-    raw = session_file.read_bytes() if session_file.is_file() else base64.b64decode(encoded, validate=True) if encoded else None
-    if raw:
-        session_account = decoded(json.loads(raw).get('wynd:user_id'))
-        if not isinstance(session_account, str) or not session_account:
-            raise ValueError('configured_account_missing')
-        if account and account != session_account:
-            raise ValueError('configured_account_changed')
-        account = session_account
     if account:
         scope['configured_account'] = account
     return scope
@@ -167,11 +215,11 @@ def grass_processes():
     result = []
     for entry in Path('/proc').glob('[0-9]*/comm'):
         try:
-            if entry.read_text().strip() == 'grass-desktop':
-                stat = (entry.parent / 'stat').read_text().rsplit(') ', 1)[1].split()
-                if stat[0] != 'Z':
-                    result.append(f'{entry.parent.name}:{stat[19]}')
-        except FileNotFoundError:
+            if entry.read_bytes().strip() == b'grass-desktop' and entry.stat().st_uid == 1000:
+                stat = (entry.parent / 'stat').read_bytes().rsplit(b') ', 1)[1].split()
+                if stat[0] != b'Z':
+                    result.append(f'{entry.parent.name}:{int(stat[19])}')
+        except (OSError, ValueError, IndexError):
             pass
     return result
 
@@ -204,6 +252,7 @@ def ready(path=None):
     current = permit['runtime']
     original = permit['identity']
     store = read(STATE if path is None else path)
+    require_node_store(store)
     observed = identity(store, pending=original['device'] is None)
     if current.get('configured_account', observed['account']) != observed['account']:
         raise ValueError('configured_account_changed')
@@ -247,11 +296,7 @@ def ordered_permit(scope, sequence):
     except FileNotFoundError:
         permit = {}
     current = permit.get('sequence', 0) if permit.get('runtime') == scope else 0
-    if sequence is None:
-        if current:
-            raise ValueError('permission_sequence_required')
-        sequence = 0
-    elif type(sequence) is not int or sequence <= current:
+    if type(sequence) is not int or sequence <= current:
         raise ValueError('stale_permission_sequence')
     permit.update(runtime=scope, sequence=sequence)
     return permit
@@ -275,7 +320,9 @@ def _grant(scope, expected, ip, until, sequence=None, permit=None):
         permit = ordered_permit(scope, sequence)
     check_deadline(until)
     require_ip_policy(ip, scope)
-    actual = identity(read(STATE), pending=True)
+    store = read(STATE)
+    require_node_store(store)
+    actual = identity(store)
     if (dict(actual, device=expected['device']) != expected or
             expected['device'] is not None and actual['device'] != expected['device']):
         raise ValueError('saved_installation_changed')
@@ -292,6 +339,10 @@ def _grant(scope, expected, ip, until, sequence=None, permit=None):
 
 
 def exchange(request):
+    if request['action'] == 'restore':
+        require_node_store(request['store'])
+        if set(request['store']) != set(IDENTITY_KEYS)|{'wdi:identity','wynd:authenticated','wynd:permissions','isConnectButtonActive'}:
+            raise ValueError('unexpected_worker_store_fields')
     scope = runtime()
     if request['action'] == 'inspect':
         network = {}
@@ -322,7 +373,7 @@ def exchange(request):
                 restored = False
                 blocked = str(error) if type(error) is ValueError else 'identity_restore_required'
             try:
-                status = read(Path('/config/run/status.json'))
+                status = read(Path('/run/wdi/status.json'))
             except (OSError, ValueError):
                 status = {}
             try:
@@ -356,6 +407,8 @@ def exchange(request):
         require_ip_policy(address, scope)
         permit = ordered_permit(scope, request.get('sequence'))
         if request['action'] == 'allow':
+            if request.get('provider') is not None:
+                save(Path('/run/wdi/provider-status.json'), request['provider'])
             _grant(scope, request['identity'], address, request['until'], request.get('sequence'))
             return {'identity': ready(), 'scope': scope}
         if grass_processes():
@@ -376,8 +429,14 @@ def exchange(request):
                     raise ValueError('local_installation_conflict')
                 store = recovered_store
                 original = recovered
-            if not compatible(local, store):
-                raise ValueError('local_installation_conflict')
+            if decoded(local.get('wdi:identity')) is not None:
+                if identity(local) != original:
+                    raise ValueError('local_installation_conflict')
+            elif not compatible(local, store):
+                # A verified legacy copy can be replaced with its node-only
+                # form. Never discard an unrelated surviving installation.
+                if identity(local) != original:
+                    raise ValueError('local_installation_conflict')
             if original['device'] is None and any(decoded(local.get(key)) for key in (
                     'wynd:device_registered_user_id', 'wynd:device_registered_pubkey')):
                 raise ValueError('registration_recovery_required')
@@ -396,11 +455,7 @@ def exchange(request):
         check_deadline(request['until'])
         save(STATE, store)
         if request.get('machine_id'):
-            MACHINE.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
-            MACHINE.write_text(request['machine_id'])
-            if os.geteuid() == 0:
-                owner = Path('/config').stat()
-                os.chown(MACHINE, owner.st_uid, owner.st_gid)
+            save(MACHINE, request['machine_id'])
         # This contains only fingerprints and public IDs, never a second key copy.
         _grant(scope, original, address, request['until'], permit=permit)
         return {'identity': ready(), 'scope': scope}

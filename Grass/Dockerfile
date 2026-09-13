@@ -7,7 +7,14 @@ COPY --from=repocket /bin/busybox /usr/bin/busybox
 COPY strace /usr/local/bin/strace
 COPY traffic.py /opt/app-traffic/traffic.py
 COPY LICENSE.strace /opt/app-traffic/LICENSE.strace
-COPY --chown=1000:1000 supervisor.py session.py worker.pl worker.sha256 ip_policy.py /opt/grass-private/
+COPY supervisor.py session.py worker.pl worker.sha256 ip_policy.py node_auth.py /opt/grass-private/
 FROM ${GRASS_BASE}
+USER 0:0
 COPY --from=additions / /
-USER 1000:1000
+RUN useradd --uid 1001 --create-home --home-dir /repocket --shell /usr/sbin/nologin repocket \
+    && install -d -o 1001 -g 1001 -m 700 /repocket/run /repocket/tmp \
+    && install -d -m 755 /run/wdi \
+    && chown -R 0:0 /opt/grass-private /opt/app-traffic \
+    && chmod 755 /opt/grass-private /opt/app-traffic \
+    && chmod 700 /config /repocket \
+    && python3 /opt/grass-private/node_auth.py

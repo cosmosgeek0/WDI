@@ -6,22 +6,24 @@
       "GRASS_ACCOUNT_ID": "3J6jD6FnED85tCL9fK1tAl0r014",
       "RP_API_KEY": "[encrypted recovery: Repocket/state/account.enc]"
     },
-    "hash": "sha256:1b52f43837f69529a7a0975fb54c200231b3641db54c371383de4aaa9e2c21f8",
-    "image": "163092837436.dkr.ecr.ap-south-1.amazonaws.com/grass-desktop:combined-20260913-1b52f43837f6",
+    "hash": "sha256:9ef067c61a3848c08f46ce29fa89413cd4d17c72a5ee92e2cf64b6fa82cc2b55",
+    "image": "163092837436.dkr.ecr.ap-south-1.amazonaws.com/grass-desktop@sha256:9ef067c61a3848c08f46ce29fa89413cd4d17c72a5ee92e2cf64b6fa82cc2b55",
     "image_caching": false,
     "resources": {
       "cpu": 1,
       "gpu_classes": [],
-      "memory": 2048,
-      "shm_size": 256
+      "memory": 1024,
+      "shm_size": 64
     }
   },
-  "display_name": "Grass continuity",
-  "name": "wdi-grass-continuity",
+  "display_name": "WDI US",
+  "name": "wdi-us",
   "organization_name": "cosmosgeeketh",
   "project_name": "default",
   "priority": "batch",
   "replicas": 1,
   "restart_policy": "always",
-  "country_codes": []
+  "country_codes": [
+    "us"
+  ]
 }

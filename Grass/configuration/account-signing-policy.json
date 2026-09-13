@@ -1,0 +1,24 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "ReadAccount",
+      "Effect": "Allow",
+      "Action": "secretsmanager:GetSecretValue",
+      "Resource": "arn:aws:secretsmanager:ap-south-1:163092837436:secret:wdi/grass-account-0B76cj"
+    },
+    {
+      "Sid": "SignNodes",
+      "Effect": "Allow",
+      "Action": "kms:Sign",
+      "Resource": "arn:aws:kms:ap-south-1:163092837436:key/*",
+      "Condition": {
+        "StringEquals": {
+          "aws:ResourceTag/wdi-purpose": "grass-node-auth",
+          "aws:ResourceTag/wdi-account": "3J6jD6FnED85tCL9fK1tAl0r014",
+          "kms:SigningAlgorithm": "ED25519_SHA_512"
+        }
+      }
+    }
+  ]
+}

@@ -6,7 +6,9 @@ No private keys or session stores are sent to the operator's terminal.
 import argparse
 import base64
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from contextlib import closing
 import fcntl
+import grp
 import hashlib
 import io
 import ipaddress
@@ -14,25 +16,30 @@ import json
 import os
 import sqlite3
 import subprocess
+import threading
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 import uuid
 from pathlib import Path
 
 import boto3
 import paramiko
+from botocore.config import Config
 from cryptography.hazmat.primitives import hashes, serialization
-from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 
-from session import IDENTITY_KEYS, LEASE_SECONDS, compatible, decoded, identity
+from session import IDENTITY_KEYS, LEASE_SECONDS, compatible, decoded, identity, node_store, require_node_store
 
 REGION = 'ap-south-1'
 SECRET = 'wdi/salad-access'
+ACCOUNT_SECRET = os.environ.get('GRASS_ACCOUNT_SECRET', 'wdi/grass-account')
 API = 'https://api.salad.com/api/public/organizations/cosmosgeeketh/projects/default/containers'
 SOURCE_SHA = hashlib.sha256(Path(__file__).with_name('session.py').read_bytes()).hexdigest()
+API_BACKOFF = Path('/var/lib/wdi/grass-api-backoff.json')
+API_BACKOFF_LOCK = threading.Lock()
 
 
 def lease_clock():
@@ -43,21 +50,56 @@ def emit(event, **values):
     print(json.dumps(dict(event=event, observed_ms=int(time.time()*1000), **values)), flush=True)
 
 
-def request(url, headers, payload=None):
+def account_retry_delay():
+    try:until=json.loads(API_BACKOFF.read_text()).get('until',0)
+    except (OSError,ValueError):until=0
+    return max(0,until-time.time())
+
+
+def request(url, headers, payload=None, on_response=None):
+    account_api=url.startswith('https://api.grass.io/')
+    if account_api:
+        delay=account_retry_delay()
+        if delay:
+            raise urllib.error.HTTPError(url,429,'provider_cooldown',
+                {'Retry-After':str(int(delay)+1)},None)
     headers = dict(headers, **{'User-Agent': 'WDI/1.0', 'Accept': 'application/json'})
     data = None
     if payload is not None:
         headers['Content-Type'] = 'application/json'
         data = json.dumps(payload).encode()
-    with urllib.request.urlopen(urllib.request.Request(url, headers=headers, data=data), timeout=15) as response:
-        return json.load(response)
+    try:
+        response=urllib.request.urlopen(urllib.request.Request(url, headers=headers, data=data),timeout=15)
+    except urllib.error.HTTPError as error:
+        if account_api and error.code==429:
+            after=error.headers.get('Retry-After','')
+            delay=max(60,int(after)) if after.isdigit() else 60
+            with API_BACKOFF_LOCK:
+                try:previous=json.loads(API_BACKOFF.read_text()).get('until',0)
+                except (OSError,ValueError):previous=0
+                temporary=API_BACKOFF.with_suffix('.tmp')
+                temporary.write_text(json.dumps({'until':max(previous,time.time()+delay),'http':429}))
+                temporary.replace(API_BACKOFF)
+        raise
+    with response:
+        raw = response.read(8_000_001)
+        if len(raw)>8_000_000:raise ValueError('provider_response_too_large')
+        if on_response:on_response(raw)
+        return json.loads(raw)
 
 
 class Vault:
     def __init__(self, path):
         self.path = path
         self.accounts = {}
-        self.secrets = boto3.client('secretsmanager', region_name=REGION)
+        self.providers = {}
+        self.provider_jobs = {}
+        self.authorizers = {}
+        self.account_session = None
+        self.account_checked = 0
+        self.account_lock = threading.Lock()
+        self.secrets = boto3.client('secretsmanager', region_name=REGION,
+                                   config=Config(connect_timeout=3, read_timeout=5, retries={'max_attempts':1}))
         self.versions = {}
         reply = self.secrets.get_secret_value(SecretId=SECRET)
         self.version = reply['VersionId']
@@ -66,6 +108,8 @@ class Vault:
         path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
         self.db = sqlite3.connect(path)
         self.db.execute('PRAGMA synchronous=FULL')
+        self.db.execute('CREATE TABLE IF NOT EXISTS key_creations (request TEXT PRIMARY KEY,account TEXT NOT NULL,kms_key TEXT)')
+        self.db.execute('CREATE TABLE IF NOT EXISTS registration_replies (profile TEXT PRIMARY KEY,version TEXT NOT NULL,ciphertext BLOB NOT NULL)')
         self.db.execute('CREATE TABLE IF NOT EXISTS installations '
                         '(profile TEXT PRIMARY KEY, device TEXT UNIQUE, account TEXT NOT NULL, '
                         'instance TEXT UNIQUE, group_id TEXT, machine TEXT, '
@@ -106,12 +150,15 @@ class Vault:
                 self.db.execute('UPDATE installations SET enrollment_started=1 '
                                 'WHERE device IS NULL AND (instance IS NOT NULL OR '
                                 'profile IN (SELECT profile FROM leases))')
+        if 'kms_key' not in {r[1] for r in self.db.execute('PRAGMA table_info(installations)')}:
+            with self.db:
+                self.db.execute('ALTER TABLE installations ADD COLUMN kms_key TEXT')
 
     def occupied(self, allocated_ids):
         now = lease_clock()
         with self.db:
             for instance, until in self.db.execute('SELECT instance,until_tick FROM leases').fetchall():
-                if instance not in allocated_ids and until <= now:
+                if until <= now:
                     self.db.execute('DELETE FROM leases WHERE instance=? AND until_tick<=?', (instance, now))
         return allocated_ids | {r[0] for r in self.db.execute('SELECT instance FROM leases')}
 
@@ -177,7 +224,9 @@ class Vault:
             return instance
         row = self.db.execute('SELECT ip,port,fingerprint FROM transports WHERE machine=?',
                               (instance['machine_id'],)).fetchone()
-        return dict(instance, **dict(zip(keys, row))) if row else instance
+        if row and all(not instance.get(k) or instance[k] == v for k,v in zip(keys,row)):
+            return dict(instance, **dict(zip(keys, row)))
+        return instance
 
     def cipher(self, version):
         if version not in self.versions:
@@ -191,28 +240,110 @@ class Vault:
                        self.versions[version]['ssh_private_key'].encode())
         return AESGCM(key)
 
+    def account(self, account=None):
+        with self.account_lock:
+            if not self.account_checked or time.monotonic()-self.account_checked >= 60:
+                self.account_checked = time.monotonic()
+                self.account_session = None
+                try:
+                    value = json.loads(self.secrets.get_secret_value(SecretId=ACCOUNT_SECRET)['SecretString'])
+                    if all(isinstance(value.get(k),str) and value[k] for k in (
+                            'account_id','access_token','refresh_token')):
+                        self.account_session = value
+                except Exception:
+                    pass
+            if self.account_session is None:
+                raise ValueError('account_secret_unavailable')
+            if account is not None and self.account_session['account_id'] != account:
+                raise ValueError('account_secret_identity_mismatch')
+            return self.account_session
+
     def create_profile(self, seed):
-        """Persist a new profile from an already server-verified account seed."""
-        store = dict(seed)
-        for key in IDENTITY_KEYS:
-            if key == 'wynd:user_id':
-                continue
-            if decoded(store.get(key)) not in (None, ''):
-                raise ValueError('seed_contains_installation')
-            store.pop(key, None)
-        private = Ed25519PrivateKey.generate()
-        store.update({key: json.dumps(value) for key, value in {
-            'wynd:device_privkey': base64.b64encode(private.private_bytes(
-                serialization.Encoding.Raw, serialization.PrivateFormat.Raw,
-                serialization.NoEncryption())).decode(),
-            'wynd:device_pubkey': base64.b64encode(private.public_key().public_bytes(
-                serialization.Encoding.Raw, serialization.PublicFormat.Raw)).decode(),
-            'wynd:browser_id': str(uuid.uuid4()),
-        }.items()})
-        store.pop('wynd:status', None)
-        payload = dict(store=store, machine_id=uuid.uuid4().hex + '\n',
-                       origin={'initiator': 'wdi_profile_create', 'created_ms': int(time.time()*1000)})
-        return self.put({}, payload, set(), create=True)
+        """Create a non-exportable KMS key, then register its persisted public identity."""
+        with closing(boto3.client('kms',region_name=REGION,
+                          config=Config(connect_timeout=3,read_timeout=5,retries={'total_max_attempts':1}))) as kms:
+            pending = self.db.execute('SELECT request,kms_key FROM key_creations WHERE account=?',
+                                      (seed['account_id'],)).fetchone()
+            if pending:
+                creation,key_id = pending
+                if not key_id:raise ValueError('key_creation_reconciliation_required')
+            else:
+                creation = str(uuid.uuid4())
+                with self.db:
+                    self.db.execute('INSERT INTO key_creations VALUES (?,?,NULL)',(creation,seed['account_id']))
+                key_id = kms.create_key(KeySpec='ECC_NIST_EDWARDS25519',KeyUsage='SIGN_VERIFY',
+                    Description='WDI node identity',Tags=[
+                        {'TagKey':'wdi-purpose','TagValue':'grass-node-auth'},
+                        {'TagKey':'wdi-account','TagValue':seed['account_id']},
+                        {'TagKey':'wdi-creation','TagValue':creation}])['KeyMetadata']['Arn']
+                with self.db:
+                    self.db.execute('UPDATE key_creations SET kms_key=? WHERE request=?',(key_id,creation))
+            public = serialization.load_der_public_key(kms.get_public_key(KeyId=key_id)['PublicKey'])
+            raw = public.public_bytes(serialization.Encoding.Raw,serialization.PublicFormat.Raw)
+            store = {'wynd:user_id':json.dumps(seed['account_id']),
+                     'wynd:device_pubkey':json.dumps(base64.b64encode(raw).decode()),
+                     'wynd:browser_id':json.dumps(str(uuid.uuid4())),
+                     'wdi:kms_key':key_id}
+            payload = dict(store=store,machine_id=uuid.uuid4().hex+'\n',
+                           origin={'initiator':'wdi_profile_create','created_ms':int(time.time()*1000)})
+            profile = self.put({},payload,set(),create=True)
+            with self.db:
+                self.db.execute('DELETE FROM key_creations WHERE request=?',(creation,))
+            return self.register_profile(profile,seed)
+
+    def register_profile(self, profile, seed):
+        """Resume only an unattempted request or a durably saved successful reply."""
+        from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
+        value = self.get(profile)[1]
+        store = value['store']
+        original = identity(store,pending=True)
+        if original['account']!=seed['account_id']:raise ValueError('registration_account_mismatch')
+        if original['device'] is not None:return profile
+        started = self.db.execute('SELECT enrollment_started FROM installations WHERE profile=?',(profile,)).fetchone()[0]
+        def preserve(raw):
+            nonce=os.urandom(12)
+            encrypted=nonce+self.cipher(self.version).encrypt(nonce,raw,('registration/'+profile).encode())
+            with self.db:
+                self.db.execute('INSERT OR REPLACE INTO registration_replies VALUES (?,?,?)',
+                                (profile,self.version,encrypted))
+        if started:
+            reply=self.db.execute('SELECT version,ciphertext FROM registration_replies WHERE profile=?',(profile,)).fetchone()
+            if not reply:raise ValueError('registration_reconciliation_required')
+            version,encrypted=reply
+            result=json.loads(self.cipher(version).decrypt(encrypted[:12],encrypted[12:],('registration/'+profile).encode()))
+        else:
+            raw=base64.b64decode(decoded(store['wynd:device_pubkey']),validate=True)
+            message=b'GRASS-REGISTER-v1\n'+raw+b'\n'+seed['account_id'].encode()
+            with closing(boto3.client('kms',region_name=REGION,
+                              config=Config(connect_timeout=3,read_timeout=5,retries={'max_attempts':1}))) as kms:
+                signature=kms.sign(KeyId=store['wdi:kms_key'],Message=message,MessageType='RAW',
+                                   SigningAlgorithm='ED25519_SHA_512')['Signature']
+            Ed25519PublicKey.from_public_bytes(raw).verify(signature,message)
+            while True:
+                with self.db:
+                    self.db.execute('UPDATE installations SET enrollment_started=1 WHERE profile=?',(profile,))
+                try:
+                    result=request('https://api.grass.io/devices/register',{'Authorization':seed['access_token']},
+                                   {'pubkey':base64.b64encode(raw).decode(),'sig':base64.b64encode(signature).decode(),
+                                    'platform':'desktop','app_version':'7.6.1','user_agent':'WDI/1.0'},on_response=preserve)
+                    break
+                except urllib.error.HTTPError as error:
+                    if error.code!=429:raise
+                    after=error.headers.get('Retry-After','')
+                    delay=max(60,int(after)) if after.isdigit() else 60
+                    with self.db:
+                        self.db.execute('UPDATE installations SET enrollment_started=0 WHERE profile=?',(profile,))
+                    emit('registration_rate_limited',profile=profile,retry_after_seconds=delay,existing_key_retained=True)
+                    time.sleep(delay)
+                    continue
+        result=result.get('result') or result
+        if not isinstance(result.get('device_id'),str) or not result['device_id']:
+            raise ValueError('registration_result_uncertain')
+        store.update({'wynd:device_id':json.dumps(result['device_id']),
+                      'wynd:device_registered_user_id':store['wynd:user_id'],
+                      'wynd:device_registered_pubkey':store['wynd:device_pubkey']})
+        self.put({},value,set())
+        return profile
 
     def get(self, profile):
         row = self.db.execute('SELECT instance,account,version,ciphertext FROM installations '
@@ -229,6 +360,7 @@ class Vault:
         # A restart retains its assignment. A replacement takes an idle
         # installation. Neither machine IDs nor IPs create installation rows.
         rows = self.db.execute('SELECT profile,device,instance FROM installations WHERE account=? '
+                               'AND device IS NOT NULL AND kms_key IS NOT NULL '
                                'ORDER BY instance=? DESC,profile', (account, instance)).fetchall()
         store = store or {}
         public = decoded(store.get('wynd:device_pubkey')) or decoded(store.get('wynd:device_registered_pubkey'))
@@ -254,6 +386,10 @@ class Vault:
         profile, device, account = original['public_sha256'], original['device'], original['account']
         instance = scope.get('instance')
         previous = self.get(profile)
+        if previous and any(decoded(previous[1]['store'].get(k)) for k in ('accessToken','refreshToken')):
+            raise ValueError('account_session_migration_required')
+        keys = (*IDENTITY_KEYS,'wdi:kms_key','wdi:private_sha256')
+        payload = dict(payload, store={k:payload['store'][k] for k in keys if k in payload['store']})
         if not previous and not create:
             raise ValueError('original_installation_backup_missing')
         if previous and previous[0] != instance and previous[0] in allocated_ids:
@@ -274,15 +410,15 @@ class Vault:
             nonce, json.dumps(payload, separators=(',', ':')).encode(), f'{account}/{profile}'.encode())
         with self.db:
             self.db.execute('INSERT INTO installations '
-                            '(profile,device,account,instance,group_id,machine,version,ciphertext) '
-                            'VALUES (?,?,?,?,?,?,?,?) '
+                            '(profile,device,account,instance,group_id,machine,version,ciphertext,kms_key) '
+                            'VALUES (?,?,?,?,?,?,?,?,?) '
                             'ON CONFLICT(profile) DO UPDATE SET device=excluded.device, instance=excluded.instance, '
                             'group_id=excluded.group_id,machine=excluded.machine, '
-                            'version=excluded.version,ciphertext=excluded.ciphertext',
+                            'version=excluded.version,ciphertext=excluded.ciphertext,kms_key=excluded.kms_key',
                             (profile, device, account, instance, scope.get('group'), scope.get('machine'),
-                             self.version, encrypted))
-        if self.get(profile) != (instance, payload):
-            raise ValueError('backup_readback_failed')
+                             self.version, encrypted,payload['store'].get('wdi:kms_key')))
+            if self.get(profile) != (instance, payload):
+                raise ValueError('backup_readback_failed')
         if instance and (not previous or previous[0] != instance):
             emit('profile_assigned', profile=profile, device=device, **scope,
                  previous_instance=previous[0] if previous else None,
@@ -301,87 +437,147 @@ class HostKey(paramiko.MissingHostKeyPolicy):
             raise ValueError('salad_ssh_host_key_mismatch')
 
 
-def exchange(instance, access, payload, before_send=None):
-    """Use Salad's interactive SSH gateway; secret input is never shell text."""
-    key = paramiko.Ed25519Key.from_private_key(io.StringIO(access['ssh_private_key']))
-    client = paramiko.SSHClient()
-    client.set_missing_host_key_policy(HostKey(instance['ssh_host_key_fingerprint']))
-    try:
-        client.connect(instance['ssh_ip'], port=instance['ssh_port'], username='root',
-                       pkey=key, timeout=15, auth_timeout=15, banner_timeout=15,
-                       allow_agent=False, look_for_keys=False)
-        channel = client.invoke_shell(width=200, height=24)
-        channel.settimeout(20)
-        # Disable terminal echo before sending credentials, and canonical input
-        # buffering before sending a JSON store larger than the PTY line limit.
-        channel.sendall("stty -echo -icanon && printf '\\nWDI_SHELL_READY\\n'\n")
-        buffer = b''
-        program_sent = False
-        sent = False
-        deadline = time.monotonic() + 45
-        while time.monotonic() < deadline:
-            part = channel.recv(65536)
+class Shell:
+    def __init__(self, instance, access, program):
+        self.client = paramiko.SSHClient()
+        self.client.set_missing_host_key_policy(HostKey(instance['ssh_host_key_fingerprint']))
+        setup_timeout = threading.Timer(35, self.client.close)
+        setup_timeout.daemon = True
+        setup_timeout.start()
+        try:
+            key = paramiko.Ed25519Key.from_private_key(io.StringIO(access['ssh_private_key']))
+            self.client.connect(instance['ssh_ip'], port=instance['ssh_port'], username='root',
+                pkey=key, timeout=15, auth_timeout=15, banner_timeout=15,
+                allow_agent=False, look_for_keys=False)
+            self.channel = self.client.invoke_shell(width=200,height=24)
+            self.channel.settimeout(20)
+            self.buffer = b''
+            self.write("stty -echo -icanon && printf '\\nWDI_SHELL_READY\\n'\n")
+            deadline = time.monotonic()+30
+            while self.line() != 'WDI_SHELL_READY':
+                if time.monotonic()>deadline:
+                    raise ValueError('salad_ssh_shell_timeout')
+            if program not in ('session.py','node_auth.py relay'):
+                raise ValueError('invalid_remote_program')
+            self.write('exec python3 /opt/grass-private/'+program+'\n')
+            while self.line() != 'WDI_READY':
+                if time.monotonic()>deadline:
+                    raise ValueError('salad_ssh_program_timeout')
+        except Exception:
+            self.client.close()
+            raise
+        finally:
+            setup_timeout.cancel()
+
+    def line(self):
+        deadline = time.monotonic()+20
+        while b'\n' not in self.buffer:
+            remaining = deadline-time.monotonic()
+            if remaining<=0:raise TimeoutError('salad_ssh_read_timeout')
+            self.channel.settimeout(remaining)
+            part = self.channel.recv(65536)
             if not part:
                 raise ValueError('salad_ssh_closed_before_result')
-            buffer += part
-            if len(buffer) > 2_000_000:
+            self.buffer += part
+            if len(self.buffer)>2_000_000:
                 raise ValueError('salad_ssh_response_too_large')
-            while b'\n' in buffer:
-                line, buffer = buffer.split(b'\n', 1)
-                line = line.rstrip(b'\r')
-                if line == b'WDI_SHELL_READY' and not program_sent:
-                    channel.sendall('exec python3 /opt/grass-private/session.py\n')
-                    program_sent = True
-                elif line == b'WDI_READY' and program_sent and not sent:
-                    if before_send:
-                        before_send()
-                    channel.sendall(json.dumps(payload, separators=(',', ':')) + '\n')
-                    sent = True
-                elif line.startswith(b'WDI_RESULT ') and sent:
-                    reply = json.loads(line[len(b'WDI_RESULT '):])
-                    if not reply['ok']:
-                        raise ValueError(reply['error'])
-                    if payload['action'] == 'inspect':
-                        # Capture in the receiving thread, before waiting for
-                        # the rest of a large fleet's inspections to complete.
-                        reply['result']['controller_received_ms'] = int(time.time()*1000)
-                        reply['result']['controller_received_tick'] = lease_clock()
-                    return reply['result']
-        raise ValueError('salad_ssh_result_timeout')
+        line,self.buffer = self.buffer.split(b'\n',1)
+        return line.rstrip(b'\r').decode()
+
+    def send(self, value):
+        self.write(json.dumps(value,separators=(',',':'))+'\n')
+
+    def write(self, value):
+        data = value.encode()
+        deadline = time.monotonic()+20
+        while data:
+            remaining = deadline-time.monotonic()
+            if remaining<=0:raise TimeoutError('salad_ssh_write_timeout')
+            self.channel.settimeout(remaining)
+            sent = self.channel.send(data)
+            if not sent:raise ValueError('salad_ssh_closed_before_send')
+            data = data[sent:]
+
+    def close(self):
+        self.client.close()
+
+
+def exchange(instance, access, payload, before_send=None):
+    """Verified SSH transports device state; account credentials never enter it."""
+    if payload['action'] == 'restore':
+        require_node_store(payload['store'])
+        if set(payload['store']) != set(IDENTITY_KEYS)|{'wdi:identity','wynd:authenticated','wynd:permissions','isConnectButtonActive'}:
+            raise ValueError('unexpected_worker_store_fields')
+    remote = Shell(instance,access,'session.py')
+    try:
+        if before_send:
+            before_send()
+        remote.send(payload)
+        line = remote.line()
+        if not line.startswith('WDI_RESULT '):
+            raise ValueError('invalid_session_reply')
+        reply = json.loads(line[len('WDI_RESULT '):])
+        if not reply['ok']:
+            raise ValueError(reply['error'])
+        if payload['action'] == 'inspect':
+            reply['result']['controller_received_ms'] = int(time.time()*1000)
+            reply['result']['controller_received_tick'] = lease_clock()
+        return reply['result']
     finally:
-        client.close()
+        remote.close()
 
 
 def verify_account(store):
-    account = decoded(store.get('wynd:user_id'))
+    account = store.get('account_id')
     if not isinstance(account, str) or not account:
         raise ValueError('configured_account_missing')
-    if decoded(store.get('wynd:authenticated')) is not True:
-        raise ValueError('grass_login_required')
-    token = decoded(store.get('accessToken'))
+    token = store.get('access_token')
     if not isinstance(token, str) or not token:
         raise ValueError('grass_login_required')
-    renewed = None
-    try:
-        user = request('https://api.grass.io/retrieveUser', {'Authorization': token})['result']['data']
-    except urllib.error.HTTPError as error:
-        refresh = decoded(store.get('refreshToken'))
-        if error.code != 401 or not isinstance(refresh, str) or not refresh:
-            raise
-        renewed = request('https://api.grass.io/refreshToken', {}, {'refreshToken': refresh})['result']['data']
-        user = request('https://api.grass.io/retrieveUser',
-                       {'Authorization': renewed['accessToken']})['result']['data']
+    # Inspection must never issue replacement account credentials.
+    user = request('https://api.grass.io/retrieveUser', {'Authorization': token})['result']['data']
     if user['userId'] != account:
         raise ValueError('grass_token_account_mismatch')
-    if renewed:
-        store['accessToken'] = json.dumps(renewed['accessToken'])
-        store['refreshToken'] = json.dumps(renewed['refreshToken'])
-        # This is the expiry update used by the official desktop after refresh.
-        store['tokenExpiry'] = json.dumps(int(time.time()) + 365*86400)
     return user
 
 
-def cycle(vault, names, capture_only, pool):
+def provider_status(vault, profile, store, observation, pool):
+    """Fetch bounded telemetry asynchronously; provider latency cannot delay grants."""
+    context = dict(scope=observation['scope'], ip=observation['public_ip'],
+                   device=decoded(store['wynd:device_id']),
+                   process_identity=observation['processes'][0] if len(observation['processes']) == 1 else None)
+    job = vault.provider_jobs.get(profile)
+    if job is not None and job.done():
+        vault.providers[profile] = job.result()
+        del vault.provider_jobs[profile]
+    previous = vault.providers.get(profile, {})
+    at = int(time.time()*1000)
+    same = all(previous.get(k) == v for k,v in context.items())
+    if profile not in vault.provider_jobs and (not same or at>=previous.get('retry_ms',0)):
+        def fetch():
+            observed = int(time.time()*1000)
+            result = dict(context, observed_ms=observed, retry_ms=observed+60_000, data=None, http=None)
+            query = urllib.parse.urlencode({'input':json.dumps(
+                {'deviceId':context['device'], 'ipAddress':context['ip']}, separators=(',', ':'))})
+            try:
+                token = vault.account(decoded(store['wynd:user_id']))['access_token']
+                data = request('https://api.grass.io/retrieveDevice?'+query,
+                               {'Authorization':token})['result']['data']
+                result.update(http=200, data={k:data.get(k) for k in (
+                    'deviceId', 'ipAddress', 'lastConnectedAt', 'isConnected', 'ipScore')})
+            except urllib.error.HTTPError as error:
+                after = error.headers.get('Retry-After', '')
+                if after.isdigit():
+                    result['retry_ms'] = observed+max(60,min(3600,int(after)))*1000
+                result.update(http=error.code,error='provider_http_'+str(error.code))
+            except Exception:
+                result['error'] = 'provider_status_unavailable'
+            return result
+        vault.provider_jobs[profile] = pool.submit(fetch)
+    return previous if same else dict(context,observed_ms=at,data=None,http=None,error='provider_check_pending')
+
+
+def cycle(vault, names, capture_only, pool, telemetry_pool):
     """Inspect concurrently; serialize identity/IP decisions in one database."""
     started = time.time()
     headers = {'Salad-Api-Key': vault.access['api_key']}
@@ -413,6 +609,10 @@ def cycle(vault, names, capture_only, pool):
         for job in jobs:job.cancel()
         raise
     occupied = vault.occupied(ids)
+    for instance, authorizer in list(vault.authorizers.items()):
+        if instance not in ids:
+            authorizer['until'] = 0
+            del vault.authorizers[instance]
     leases = {r[0]: dict(zip(('instance','profile','account','ip','runtime','until_ms','boot_time','observed_ms',
                             'until_tick','observed_tick'), r))
               for r in vault.db.execute('SELECT * FROM leases')}
@@ -427,27 +627,23 @@ def cycle(vault, names, capture_only, pool):
         lease = leases.get(i['id'])
         if not i.get('ssh_ip'):
             row['error'] = 'ssh_unavailable'
-            if lease:
+            if lease and lease['until_tick']>lease_clock():
                 unknown_accounts.add(lease['account'])
             continue
-        payload, hook = {'action':'inspect', 'include_ip':True}, None
-        if (lease and lease['observed_tick'] and not capture_only
-                and lease['account'] == i['configured_account']):
+        packet = {'action':'inspect', 'include_ip':True}
+        hook = None
+        if not capture_only and lease and lease['observed_tick']>0 and lease_clock()-lease['observed_tick']<LEASE_SECONDS:
             saved = vault.get(lease['profile'])
-            original = identity(saved[1]['store'], pending=True) if saved and saved[0] == i['id'] else None
-            if original and original['device'] is not None:
-                scope = dict(group=i['group_id'], instance=i['id'], machine=i['machine_id'],
-                             runtime=lease['runtime'], configured_account=i['configured_account'])
-                payload['lease'] = dict(scope=scope, identity=original,
-                                        ip=lease['ip'], until=0, sequence=vault.sequence())
-                def renew(l=lease, packet=payload):
-                    elapsed=lease_clock()-l['observed_tick']
-                    if elapsed < 0:
-                        raise ValueError('controller_clock_moved_backwards')
-                    packet['lease']['until']=l['boot_time']+elapsed+LEASE_SECONDS-10
-                    vault.extend(l['instance'],l['profile'],l['runtime'],l['ip'])
-                hook=renew
-        jobs[pool.submit(exchange, i, vault.access, payload, hook)] = i
+            if saved and saved[0]==i['id'] and saved[1]['store'].get('wdi:kms_key'):
+                scope = dict(group=i['group_id'],instance=i['id'],machine=i['machine_id'],
+                             runtime=lease['runtime'],configured_account=i['configured_account'])
+                packet['lease'] = dict(scope=scope,identity=identity(saved[1]['store']),ip=lease['ip'],
+                                       sequence=vault.sequence())
+                def renew(p=packet,l=lease,s=scope):
+                    p['lease']['until'] = l['boot_time']+lease_clock()-l['observed_tick']+LEASE_SECONDS
+                    vault.extend(s['instance'],l['profile'],s['runtime'],l['ip'])
+                hook = renew
+        jobs[pool.submit(exchange, i, vault.access, packet, hook)] = i
     for job in as_completed(jobs):
         i = jobs[job]
         try:
@@ -457,8 +653,17 @@ def cycle(vault, names, capture_only, pool):
                 expected['configured_account'] = i['configured_account']
             if any(obs['scope'].get(k) != value for k, value in expected.items()):
                 raise ValueError('salad_runtime_identity_mismatch')
+            if (not isinstance(obs.get('store'),(dict,type(None))) or not isinstance(obs.get('processes'),list)
+                    or type(obs.get('restored')) is not bool or not isinstance(obs.get('boot_time'),(int,float))
+                    or not isinstance(obs['scope'].get('runtime'),str)):
+                raise ValueError('invalid_worker_observation')
             observed[i['id']] = obs
             lease = leases.get(i['id'])
+            if not capture_only and lease and obs.get('renewed') and obs.get('public_ip') == lease['ip']:
+                saved = vault.get(lease['profile'])
+                if saved and identity(obs['store']) == identity(saved[1]['store']):
+                    from kms_nodes import authorize
+                    authorize(vault,i,lease['profile'],obs['scope'],lease['ip'])
             if lease and not capture_only and not obs.get('renewed'):
                 # Keep the possible lifetime of every packet already sent.
                 # Stop blind renewals after rejection so changed-IP/runtime
@@ -466,13 +671,13 @@ def cycle(vault, names, capture_only, pool):
                 with vault.db:
                     vault.db.execute('UPDATE leases SET observed_tick=0 WHERE instance=? AND runtime=?',
                                      (i['id'], lease['runtime']))
-                if not obs.get('public_ip'):
+                if not obs.get('public_ip') and lease['until_tick']>lease_clock():
                     unknown_accounts.add(lease['account'])
         except Exception as error:
             report[i['id']]['error'] = str(error) if type(error) is ValueError else type(error).__name__
-            if i['id'] in leases:
+            if i['id'] in leases and leases[i['id']]['until_tick']>lease_clock():
                 unknown_accounts.add(leases[i['id']]['account'])
-    actions, verified = {}, {}
+    actions = {}
     # Keep current owners ahead of new contenders; SQL also rejects duplicate
     # IPs/profiles when several replacements arrive in the same inspection.
     managed.sort(key=lambda i: (i['id'] not in leases, i['id']))
@@ -500,7 +705,13 @@ def cycle(vault, names, capture_only, pool):
                 raise local_error or ValueError('running_installation_has_no_saved_keys')
             if local and local['account'] != account:
                 raise ValueError('configured_account_changed')
-            profile = local['public_sha256'] if local else vault.select(account, i['id'], occupied, store)
+            if capture_only:
+                profile = local['public_sha256']
+            else:
+                assignment=vault.db.execute('SELECT profile FROM installations WHERE account=? '
+                    'AND (instance=? OR (machine=? AND group_id=?)) ORDER BY instance=? DESC LIMIT 1',
+                    (account,i['id'],i['machine_id'],i['group_id'],i['id'])).fetchone()
+                profile=assignment[0] if assignment else vault.select(account,i['id'],occupied)
             saved = vault.get(profile)
             if saved and saved[0] != i['id'] and saved[0] in occupied:
                 raise ValueError('previous_installation_still_allocated_or_leased')
@@ -524,8 +735,15 @@ def cycle(vault, names, capture_only, pool):
                 raise local_error
             if local:
                 if not saved:
-                    verify_account(store)
-                value = dict(saved[1] if saved else {'origin':scope}, store=store, machine_id=obs['machine_id'])
+                    verify_account(vault.account(account))
+                if saved and saved[1]['store'].get('wdi:kms_key'):
+                    if local != identity(saved[1]['store']):
+                        raise ValueError('worker_identity_changed')
+                    value = dict(saved[1],machine_id=obs['machine_id'])
+                else:
+                    value = dict(saved[1] if saved else {'origin':scope},
+                                 store={k:store[k] for k in IDENTITY_KEYS if k in store},
+                                 machine_id=obs['machine_id'])
                 if saved != (i['id'], value):
                     vault.put(scope, value, occupied, create=capture_only)
                 saved = (i['id'], value)
@@ -546,39 +764,29 @@ def cycle(vault, names, capture_only, pool):
                     raise ValueError('ip_policy_not_admitted')
             lease = leases.get(i['id'])
             if original['device'] is None:
-                if vault.db.execute('SELECT enrollment_started FROM installations WHERE profile=?', (profile,)).fetchone()[0]:
-                    row['enrollment_status'] = 'uncertain'
-                    # An already-running first attempt can finish under its
-                    # existing deadline. Never send it another launch permission.
-                    if (obs['processes'] and lease and lease['profile'] == profile
-                            and lease['runtime'] == scope['runtime'] and lease['ip'] == obs['public_ip']
-                            and lease['account'] == account and lease['until_tick'] > lease_clock()):
-                        continue
-                    raise ValueError('enrollment_status_uncertain')
+                raise ValueError('trusted_registration_required')
             if account in unknown_accounts and not (lease and lease['ip'] == obs['public_ip']):
                 raise ValueError('existing_account_ip_inventory_incomplete')
             vault.admit(scope, profile, account, obs['public_ip'], obs['boot_time'],
                         obs.get('controller_received_ms',int(time.time()*1000)),
                         obs.get('controller_received_tick',lease_clock()))
-            if obs.get('renewed'):
-                continue
             if local and (obs['processes'] or obs['restored']):
                 payload = dict(action='allow', scope=scope, identity=original,
                                ip=obs['public_ip'], until=obs['boot_time']+LEASE_SECONDS)
             else:
                 value = saved[1]
-                key = (account, hashlib.sha256(str(value['store'].get('accessToken')).encode()).hexdigest())
-                if key not in verified:
-                    verify_account(value['store'])
-                    verified[key] = {k:value['store'][k] for k in ('accessToken','refreshToken','tokenExpiry') if k in value['store']}
-                value['store'].update(verified[key])
                 vault.put(scope, value, occupied)
-                payload = dict(action='restore', scope=scope, pending=original['device'] is None,
-                               ip=obs['public_ip'], until=obs['boot_time']+LEASE_SECONDS, **value)
+                payload = dict(action='restore', scope=scope,
+                               ip=obs['public_ip'], until=obs['boot_time']+LEASE_SECONDS,
+                               store=node_store(value['store']), machine_id=value['machine_id'])
+            if payload['action'] == 'allow':
+                payload['provider'] = provider_status(vault, profile, saved[1]['store'], obs, telemetry_pool)
             # Decision order survives asynchronous SSH delivery. A queued old
             # grant cannot acquire a newer sequence after a later hold is sent.
             payload['sequence'] = vault.sequence()
-            hook = lambda s=scope, p=profile, ip=obs['public_ip']: vault.extend(s['instance'],p,s['runtime'],ip)
+            def hook(s=scope, p=profile, o=obs, packet=payload):
+                packet['until'] = o['boot_time']+lease_clock()-o['controller_received_tick']+LEASE_SECONDS
+                vault.extend(s['instance'],p,s['runtime'],o['public_ip'])
             actions[pool.submit(exchange, i, vault.access, payload, hook)] = (i, payload['action'])
         except Exception as error:
             row['error'] = str(error) if type(error) is ValueError else type(error).__name__
@@ -593,6 +801,11 @@ def cycle(vault, names, capture_only, pool):
         try:
             reply = job.result()
             row['action'] = action
+            if action in ('restore','allow'):
+                from kms_nodes import authorize
+                authorize(vault,i,row['profile'],observed[i['id']]['scope'],row['ip'])
+            elif i['id'] in vault.authorizers:
+                vault.authorizers[i['id']]['until'] = 0
             if action == 'restore':
                 row['restored'] = True
                 emit('identity_restored', instance=i['id'], machine=i['machine_id'], group=i['group_id'],
@@ -606,22 +819,30 @@ def cycle(vault, names, capture_only, pool):
         previous = vault.accounts.get(account, {})
         if time.time()*1000 - previous.get('checked_ms',0) < 60_000:
             continue
-        value = next((o['store'] for o in observed.values() if o.get('store') and
-                      decoded(o['store'].get('wynd:user_id')) == account), None)
-        if not value:
-            saved = vault.db.execute('SELECT profile FROM installations WHERE account=? LIMIT 1', (account,)).fetchone()
-            if saved:
-                value = vault.get(saved[0])[1]['store']
+        saved = vault.db.execute('SELECT profile FROM installations WHERE account=? LIMIT 1', (account,)).fetchone()
+        value = vault.get(saved[0])[1]['store'] if saved else None
         if not value:
             continue
         checked = int(time.time()*1000)
         try:
-            user = verify_account(value)
+            session = vault.account(account)
+            user = verify_account(session)
             vault.accounts[account] = dict(checked_ms=checked, observed_ms=checked,
+                epoch_earnings=previous.get('epoch_earnings',{}),
                 registered_devices=user.get('deviceCount'), device_cap=user.get('deviceCapOverride'), error=None)
-            vault.accounts[account]['account_total_points'] = user.get('totalPoints')
-            vault.accounts[account]['account_network_points'] = user.get('proxyPoints')
-            token = decoded(value['accessToken'])
+            token = session['access_token']
+            points = dict(previous.get('epoch_earnings',{}),checked_ms=checked)
+            try:
+                query = urllib.parse.urlencode({'input':json.dumps({'limit':1,'isLatestOnly':True})})
+                epochs = request('https://api.grass.io/epochEarnings?'+query,{'Authorization':token})['result']['data']['data']
+                if not isinstance(epochs,list) or not epochs or epochs[0].get('userId')!=account:
+                    raise ValueError('epoch_account_mismatch')
+                points.update(observed_ms=int(time.time()*1000),error=None,
+                    record={k:epochs[0].get(k) for k in ('userId','epochId','epochName','stage','startDate','endDate',
+                        'modified','proxyPoints','totalPoints','rewardPoints','referralPoints','totalUptime')})
+            except Exception as error:
+                points['error']=type(error).__name__
+            vault.accounts[account]['epoch_earnings']=points
             try:
                 usage = request('https://api.grass.io/activeIps', {'Authorization':token})['result']['data']
                 managed_ips = {r.get('ip') for r in report.values() if r.get('account') == account}
@@ -634,11 +855,15 @@ def cycle(vault, names, capture_only, pool):
                 vault.accounts[account]['usage_error'] = type(error).__name__
         except Exception as error:
             vault.accounts[account] = dict(previous, checked_ms=checked, error=type(error).__name__)
+            vault.accounts[account]['epoch_earnings'] = dict(previous.get('epoch_earnings',{}),
+                checked_ms=checked,error='account_observation_unavailable')
     rows = list(report.values())
     status = dict(observed_ms=int(time.time()*1000), cycle_seconds=round(time.time()-started,3),
                   groups=names, desired_allocations=sum(g['replicas'] for g in selected.values()),
                   allocations=len(rows), running=sum(r['state']=='running' for r in rows),
                   grass_running=sum(bool(r.get('processes')) for r in rows),
+                  grass_process_observed=sum('processes' in r for r in rows),
+                  grass_process_unknown=sum('processes' not in r for r in rows),
                   observed_unique_ips=len({r['ip'] for r in rows if r.get('ip')}),
                   profiles=vault.db.execute('SELECT COUNT(*) FROM installations').fetchone()[0],
                   reserved_after_instance_loss=[dict(instance=r[0],
@@ -649,6 +874,20 @@ def cycle(vault, names, capture_only, pool):
     temp = path.with_suffix('.tmp')
     temp.write_text(json.dumps(status, separators=(',',':'))+'\n')
     temp.replace(path)
+    publication = dict(schema_version=1,published_ms=status['observed_ms'],
+        groups=[dict(id=g['id'],name=g['name'],account_id=g['container']['environment_variables']['GRASS_ACCOUNT_ID'])
+                for g in selected.values() if g.get('container',{}).get('environment_variables',{}).get('GRASS_ACCOUNT_ID')],
+        accounts={account:{k:value.get(k) for k in ('checked_ms','observed_ms','registered_devices',
+                  'device_cap','error','epoch_earnings')} for account,value in vault.accounts.items()})
+    public_path=Path('/run/wdi/grass-account-observation.json')
+    public_path.parent.mkdir(mode=0o750,parents=True,exist_ok=True)
+    os.chown(public_path.parent,-1,grp.getgrnam('salad').gr_gid)
+    os.chmod(public_path.parent,0o750)
+    public_temp=public_path.with_suffix('.tmp')
+    public_temp.write_text(json.dumps(publication,separators=(',',':'))+'\n')
+    os.chown(public_temp,-1,grp.getgrnam('salad').gr_gid)
+    os.chmod(public_temp,0o640)
+    public_temp.replace(public_path)
     for row in rows:
         if row['error']:
             emit('identity_blocked', instance=row['instance'], reason=row['error'])
@@ -658,9 +897,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--group', action='append', help='Existing group names, comma-separated; repeat for batches')
     parser.add_argument('--initialize', type=int, metavar='COUNT',
-                        help='Explicitly prepare this total number of permanent profiles once')
-    parser.add_argument('--account-session', type=Path, default=Path('/var/lib/wdi/account-session.enc'),
-                        help='Encrypted account session for one-time setup')
+                        help='Explicitly prepare and register this total on the trusted controller')
     parser.add_argument('--capture', action='store_true', help='Import existing installations once; does not register devices')
     parser.add_argument('--once', action='store_true')
     parser.add_argument('--status', action='store_true', help='Show the last measured fleet state without contacting providers')
@@ -678,35 +915,55 @@ def main():
         parser.error('invalid Salad group name')
     os.umask(0o077)
     args.database.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
-    with args.database.with_suffix('.lock').open('a') as lock:
+    suffix='.provision.lock' if args.initialize is not None else '.lock'
+    with args.database.with_suffix(suffix).open('a') as lock:
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         vault = Vault(args.database)
         if args.initialize is not None:
-            envelope = json.loads(args.account_session.read_bytes())
-            packed = base64.b64decode(envelope['ciphertext'], validate=True)
-            seed = json.loads(vault.cipher(envelope['version']).decrypt(
-                packed[:12], packed[12:], b'wdi-grass-account-session-v1'))
+            while account_retry_delay():
+                delay=account_retry_delay()
+                emit('profile_capacity_waiting',retry_after_seconds=int(delay)+1,target=args.initialize)
+                time.sleep(min(60,delay))
+            seed = vault.account()
             user = verify_account(seed)
-            account = decoded(seed['wynd:user_id'])
-            count = vault.db.execute('SELECT COUNT(*) FROM installations WHERE account=?', (account,)).fetchone()[0]
-            pending = vault.db.execute('SELECT COUNT(*) FROM installations WHERE account=? AND device IS NULL', (account,)).fetchone()[0]
-            cap, registered = user.get('deviceCapOverride'), user.get('deviceCount')
-            if not isinstance(cap, int) or not isinstance(registered, int):
+            account = seed['account_id']
+            from kms_nodes import provision
+            rows=vault.db.execute('SELECT profile,device,enrollment_started FROM installations WHERE account=?',
+                                  (account,)).fetchall()
+            cap,registered=user.get('deviceCapOverride'),user.get('deviceCount')
+            if not isinstance(cap,int) or not isinstance(registered,int):
                 raise ValueError('provider_device_cap_unavailable')
-            if max(0,args.initialize-count)+pending > max(0,cap-registered):
+            needed=max(0,args.initialize-len(rows))+sum(device is None and not begun for _,device,begun in rows)
+            if needed>max(0,cap-registered):
                 raise ValueError('requested_profiles_exceed_remaining_device_cap')
-            for _ in range(max(0, args.initialize - count)):
+            for profile,device,_begun in rows:
+                if not vault.get(profile)[1]['store'].get('wdi:kms_key'):
+                    raise ValueError('run_legacy_key_migration_before_initializing_capacity')
+                provision(vault,profile)
+                if device is None:
+                    vault.register_profile(profile,seed)
+            count=vault.db.execute('SELECT COUNT(*) FROM installations WHERE account=? AND device IS NOT NULL AND kms_key IS NOT NULL',
+                                   (account,)).fetchone()[0]
+            with vault.db:
+                vault.db.execute('DELETE FROM key_creations WHERE kms_key IN (SELECT kms_key FROM installations)')
+            initial=count
+            while count<args.initialize:
+                prepared_at=time.monotonic()
                 vault.create_profile(seed)
-            emit('profiles_initialized', account=account, profiles=max(count, args.initialize),
-                 newly_prepared=max(0, args.initialize-count),
+                count=vault.db.execute('SELECT COUNT(*) FROM installations WHERE account=? AND device IS NOT NULL AND kms_key IS NOT NULL',(account,)).fetchone()[0]
+                if count%10==0 or count==args.initialize:
+                    emit('profile_capacity',profiles=count,target=args.initialize)
+                time.sleep(max(0,3-(time.monotonic()-prepared_at)))
+            emit('profiles_initialized', account=account, profiles=count,
+                 newly_prepared=count-initial,
                  provider_registered_devices=user.get('deviceCount'),
-                 registration_requested=False)
+                 registration_requested=needed>0)
             return
         failures = 0
-        with ThreadPoolExecutor(max_workers=8) as pool:
+        with ThreadPoolExecutor(max_workers=32) as pool, ThreadPoolExecutor(max_workers=8) as telemetry_pool:
             while True:
                 try:
-                    cycle(vault, names, args.capture, pool)
+                    cycle(vault, names, args.capture, pool, telemetry_pool)
                     failures = 0
                     pause = 30
                 except Exception as error:

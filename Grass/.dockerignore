@@ -5,6 +5,7 @@
 !worker.pl
 !worker.sha256
 !ip_policy.py
+!node_auth.py
 !traffic.py
 !strace
 !LICENSE.strace

@@ -1,64 +1,33 @@
-# WDI — current Grass + Repocket runtime
+# WDI
 
-This package reproduces the combined container currently deployed on Salad and
-restores its saved Grass installation identity. Start with
-[Grass/README.md](Grass/README.md) for the complete AWS, image, controller, and
-Salad startup commands. No previous standalone Grass release or historical test
-reports are included. Honeygain, Bytelixir, the website, and AGENTS.md are excluded
-from this GitHub package.
+Combined Grass Desktop and Repocket runtime for Salad, with device signing in
+AWS KMS and account credentials confined to the trusted Mumbai controller.
+[Grass/README.md](Grass/README.md) describes deployment, recovery and the security
+boundary. The existing Honeygain, Bytelixir and website folders are not part of
+this GitHub package.
 
-## Required files
+The current image is
+`sha256:9ef067c61a3848c08f46ce29fa89413cd4d17c72a5ee92e2cf64b6fa82cc2b55`.
+Its complete archive is
+`Grass/images/runtime-20260913-9ef067c61a38.tar`. The source archives under
+`Grass/images/` and `Repocket/images/` permit rebuilding the pinned clients.
 
-| Keep | Reason |
-| --- | --- |
-| `Grass/images/grass-repocket-combined-20260913-1b52f43837f6.tar` | Exact deployed combined image; load it to avoid a rebuild changing the digest. |
-| `Grass/images/base-7.6.1-v3.tar` | Pinned Grass binary, Linux libraries and base filesystem consumed by the current Dockerfile. |
-| `Repocket/images/repocket-1.2.0-filtered-45cd81b05271.tar` | Pinned Repocket binary/launcher and BusyBox consumed by the combined build. |
-| `Repocket/images/build-inputs-amd64.tar` | Exact upstream inputs needed to rebuild that Repocket launcher image from its Dockerfile. |
-| Grass and Repocket source/build files | The controller, container startup, IP policy, native launcher and separate app byte meters. |
-| `Grass/state/grass.sqlite3` | Current encrypted Grass installation keys; preserves the existing provider device identity. |
-| `Grass/state/account-session.enc`, `Repocket/state/account.enc` | Encrypted credentials needed to restore account access. |
-| `Grass/configuration/`, `Grass/recovery.json`, checksum files | Current launch settings, required AWS secret version, checkpoint time and integrity checks. |
-
-The image archives are committed at these paths using **Git LFS**. GitHub’s
-**Code → Download ZIP** is configured to include the actual images, so one ZIP
-contains the complete package. To recover through Git, install
-[Git LFS](https://git-lfs.com/), then:
-
-```sh
-git lfs install
-git clone git@github.com:cosmosgeek0/WDI.git
-cd WDI
-git lfs pull
-```
-
-A clone without Git LFS contains small pointer files instead of the images.
-The checksum check below detects that incomplete download. No separate image
-registry or browser extension is needed to retrieve the committed image files.
-Encrypted state and the static tracer are ordinary Git files.
-
-From WDI, check the complete download:
+Images use Git LFS. GitHub's ZIP download is configured to include LFS objects.
+For a clone, run `git lfs install`, clone this repository, then `git lfs pull`.
+A clone containing only LFS pointer files is incomplete. Verify the package:
 
 ```sh
 (cd Grass && shasum -a 256 -c CHECKSUMS.sha256)
 (cd Repocket && shasum -a 256 -c CHECKSUMS.sha256)
 ```
 
-On Linux, `sha256sum -c CHECKSUMS.sha256` is equivalent.
+The encrypted checkpoint and its capture time, identities, AWS dependencies and
+hashes are recorded in `Grass/recovery.json`. Preserve the listed Secrets Manager
+versions and KMS keys. The new private device keys are not exportable: deleting
+the KMS keys cannot be repaired by this ZIP. Provider earnings remain with the
+provider; a replacement Salad machine obtains a new runtime and public IP.
 
-## Recovery boundary
-
-The saved checkpoint was read from the live controller and its encrypted Grass
-profile and Repocket credential were decrypted successfully using the recorded
-AWS secret version. The Repocket credential also matched the live Salad group.
-The combined archive manifest matches the deployed digest exactly.
-
-**AWS access is still required.** Keep Secrets Manager `wdi/salad-access`, including
-the version recorded in `Grass/recovery.json`, in account `163092837436`, region
-`ap-south-1`. No plaintext Salad API key or SSH private key is stored here. If that
-AWS secret is deleted too, this encrypted backup cannot restore those identities.
-
-Recovery preserves this software/configuration and the saved Grass device keys.
-A destroyed Salad allocation gets a new instance, machine and public IP;
-Repocket may get a new provider device ID. Provider-side earnings remain at the
-provider. The saved state is a dated checkpoint, not a continuously updated backup.
+Historical encrypted recovery material is retained separately. Neither deleting
+local files nor moving keys into KMS revokes a previously copied account token.
+The old access-token exposure remains unresolved; see the security notes below
+before treating the account itself as fully secured.

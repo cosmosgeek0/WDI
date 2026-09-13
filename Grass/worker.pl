@@ -2,11 +2,9 @@
 use strict;
 use warnings;
 use JSON::PP;
-use HTTP::Tiny;
 use Time::HiRes qw(time sleep);
 use Time::Local qw(timegm);
-use Time::Piece;
-use Fcntl qw(:flock O_WRONLY O_NONBLOCK);
+use Fcntl qw(:flock F_GETFL F_SETFL O_WRONLY O_NONBLOCK);
 use Scalar::Util qw(looks_like_number);
 
 my $SAMPLE_MS = 10_000;
@@ -40,9 +38,14 @@ sub emit {
     my ($ctx, $kind, $value) = @_;
     my $row = {kind => $kind, revision => 2, group_id => $ctx->{group_id},
         instance => $ctx->{instance}, machine => $ctx->{machine}, run => $ctx->{run},
-        source_ms => now_ms(), runtime_adapter => $ADAPTER, %$value};
+        source_ms => now_ms(), runtime_adapter => $ADAPTER, log_dropped => $ctx->{log_dropped} // 0, %$value};
     $row->{request_ms} = $ctx->{recovery}{requested_ms} if $kind eq 'grass_event' && $ctx->{recovery}{requested_ms};
-    print {$ctx->{output}} ($kind eq 'grass_sample' ? 'GRASS_SAMPLE_V2 ' : 'GRASS_EVENT_V2 '), encode_json($row), "\n";
+    my $line = ($kind eq 'grass_sample' ? 'GRASS_SAMPLE_V2 ' : 'GRASS_EVENT_V2 ') . encode_json($row) . "\n";
+    $ctx->{log_buffer} //= '';
+    if (length($ctx->{log_buffer}) + length($line) <= 65536) { $ctx->{log_buffer} .= $line; }
+    else { $ctx->{log_dropped}++; }
+    my $written = syswrite($ctx->{output}, $ctx->{log_buffer});
+    substr($ctx->{log_buffer}, 0, $written, '') if defined($written) && $written;
 }
 sub save_recovery {
     my ($ctx) = @_;
@@ -54,6 +57,8 @@ sub save_recovery {
 sub process {
     for my $path (sort glob '/proc/[0-9]*/comm') {
         next unless (read_file($path) // '') eq "grass-desktop\n";
+        my @owner = stat $path;
+        next unless @owner && $owner[4] == 1000;
         $path =~ m{/proc/(\d+)/};
         my $pid = 0 + $1;
         my $value = read_file("/proc/$pid/stat") // '';
@@ -110,21 +115,6 @@ sub native_observation {
     $ctx->{native_previous} = $native;
     return $native;
 }
-sub provider_request {
-    my ($ctx, $path, $token) = @_;
-    my $reply = $ctx->{http}->get('https://api.grass.io/' . $path, {headers => {Authorization => $token}});
-    my $body = eval { decode_json($reply->{content}) };
-    return ($reply, ref($body) eq 'HASH' ? $body : {});
-}
-sub retry_after_ms {
-    my ($reply) = @_;
-    my $after = $reply->{headers}{'retry-after'};
-    return undef unless defined $after;
-    return 1000 * $after if $after =~ /\A\d+\z/;
-    my $date = eval { Time::Piece->strptime($after, '%a, %d %b %Y %H:%M:%S GMT')->epoch * 1000 };
-    my $at = now_ms();
-    return defined($date) && $date > $at ? $date - $at : undef;
-}
 sub observe {
     my ($ctx) = @_;
     my $at = now_ms();
@@ -143,12 +133,8 @@ sub observe {
     return {%$health, error => 'Grass session store is unavailable or malformed'} unless ref($session) eq 'HASH';
     my $native = native_observation($ctx, $pid, $process_state, $ticks, $session, $at);
     $health->{native} = $native;
-    my $token = decoded($session->{accessToken});
     my $device = decoded($session->{'wynd:device_id'});
     $health->{account_id} = decoded($session->{'wynd:user_id'});
-    if (!defined($token) || ref($token) || !$token || !decoded($session->{'wynd:authenticated'})) {
-        return {%$health, state => 'login_required', error => 'Grass sign-in is required'};
-    }
     if (!defined($device) || ref($device) || !$device) {
         return {%$health, state => 'starting', error => 'Grass is registering this device'};
     }
@@ -157,15 +143,7 @@ sub observe {
         return {%$health, state => 'offline', failure_source => 'native_disconnect',
             error => 'Grass changed from CONNECTED to DISCONNECTED in this process and has no established TCP transport'};
     }
-    if (defined($ctx->{last_token}) && $ctx->{last_token} ne $token) {
-        delete $ctx->{recovery}{provider_retry_ms};
-    }
-    $ctx->{last_token} = $token;
-    if ($at < ($ctx->{recovery}{provider_retry_ms} // 0)) {
-        return {%$health, error => $ctx->{provider_error} // 'Grass status requests are waiting for their retry time',
-            retry_after_ms => $ctx->{recovery}{provider_retry_ms} - $at};
-    }
-    my $network = eval { decode_json(read_file('/config/run/ip-policy.json') // '') };
+    my $network = eval { decode_json(read_file('/run/wdi/ip-policy.json') // '') };
     my $boot = (split /\s+/, read_file('/proc/uptime') // '0')[0];
     if (!(ref($network) eq 'HASH' && ref($network->{scope}) eq 'HASH'
             && ($network->{scope}{group} // '') eq $ctx->{group_id}
@@ -182,31 +160,32 @@ sub observe {
     $ctx->{ip} = $network->{ip};
     $ctx->{ip_observed_ms} = $network->{ip_checked_ms};
     $ctx->{country} = ($network->{country} // '') =~ /\A[A-Z]{2}\z/ ? $network->{country} : undef;
-    my $query = encode_json({deviceId => $device, ipAddress => $ctx->{ip}});
-    $query =~ s/([^A-Za-z0-9_.~-])/sprintf('%%%02X', ord($1))/eg;
-    my ($reply, $body) = provider_request($ctx, 'retrieveDevice?input=' . $query, $token);
-    $health->{observed_ms} = now_ms();
-    $health->{http} = 0 + $reply->{status};
-    $health->{http_attempted} = JSON::PP::true;
-    if ($reply->{status} == 404) {
+    my $provider = eval { decode_json(read_file('/run/wdi/provider-status.json') // '') };
+    if (!(ref($provider) eq 'HASH' && ref($provider->{scope}) eq 'HASH'
+            && ($provider->{scope}{group} // '') eq $ctx->{group_id}
+            && ($provider->{scope}{instance} // '') eq $ctx->{instance}
+            && ($provider->{scope}{machine} // '') eq $ctx->{machine}
+            && ($provider->{scope}{runtime} // '') eq $ctx->{runtime}
+            && ($provider->{device} // '') eq $device
+            && ($provider->{ip} // '') eq $ctx->{ip}
+            && ($provider->{process_identity} // '') eq ($health->{process_identity} // '')
+            && looks_like_number($provider->{observed_ms})
+            && abs($at-$provider->{observed_ms}) <= 90000)) {
         return {%$health, telemetry_missing => JSON::PP::true,
-            error => 'Grass has not published this device and IP yet'};
+            error => 'Fresh provider confirmation from the controller is unavailable'};
     }
-    if ($reply->{status} == 401 || $reply->{status} == 403) {
-        return {%$health, state => 'login_required', error => 'Grass rejected the saved session; sign-in is required'};
-    }
-    if ($reply->{status} != 200) {
-        my $after = retry_after_ms($reply);
-        $health->{retry_after_ms} = $after if defined $after;
-        return {%$health, error => 'Grass status API returned HTTP ' . $reply->{status}};
-    }
-    my $device_row = ref($body->{result}) eq 'HASH' ? $body->{result}{data} : undef;
-    return {%$health, error => 'Grass status response has an unexpected format'}
-        unless ref($device_row) eq 'HASH';
+    $health->{http} = $provider->{http};
+    $health->{provider_observed_ms} = $provider->{observed_ms};
+    my $device_row = $provider->{data};
+    return {%$health, telemetry_missing => JSON::PP::true,
+        error => $provider->{error} // 'Provider device telemetry is unavailable'}
+        unless ($provider->{http} // 0) == 200 && ref($device_row) eq 'HASH';
     my $matches = ($device_row->{deviceId} // '') eq $device && ($device_row->{ipAddress} // '') eq ($ctx->{ip} // '');
-    $health->{provider_listing} = {source => 'retrieveDevice', observed_ms => $health->{observed_ms},
+    $health->{provider_listing} = {source => 'controller retrieveDevice', observed_ms => $provider->{observed_ms},
         device_ip_present => $matches ? JSON::PP::true : JSON::PP::false};
-    if (!$matches || !$device_row->{lastConnectedAt} || !$device_row->{isConnected}) {
+    my $connected_at = stamp($device_row->{lastConnectedAt});
+    if (!$matches || !defined($connected_at) || !JSON::PP::is_bool($device_row->{isConnected})
+            || !$device_row->{isConnected}) {
         $health->{state} = 'unknown';
         $health->{error} = 'Grass does not currently confirm this device and IP; missing telemetry is not a native failure';
         $health->{telemetry_missing} = JSON::PP::true;
@@ -214,7 +193,7 @@ sub observe {
         $health->{error} = 'Grass did not report a usable network-quality reading';
     } else {
         $health->{quality} = 0 + $device_row->{ipScore};
-        $health->{connected_at_ms} = stamp($device_row->{lastConnectedAt});
+        $health->{connected_at_ms} = $connected_at;
         $health->{state} = $health->{quality} > 0 ? 'connected' : 'unknown';
         $health->{error} = 'Grass reports zero quality; explicit provider/IP rejection is unverified' if $health->{quality} == 0;
     }
@@ -295,12 +274,16 @@ sub perform_action {
     }
     emit($ctx, 'grass_event', {event => 'requested', action => $action, reason => $reason, attempt => ($saved->{attempts} // 0) + 1});
     if ($action eq 'restart_app') {
-        $saved->{attempts} = ($saved->{attempts} // 0) + 1;
-        kill 'CONT', $saved->{old_pid} if $reason eq 'client_stalled' && $saved->{old_pid};
-        if (sysopen(my $pipe, '/tmp/.cinit_cmd', O_WRONLY | O_NONBLOCK)) {
-            my $ok = print {$pipe} "restart:app\n";
+        my ($pid, $state, $ticks) = process();
+        kill 'CONT', $pid if $reason eq 'client_stalled' && defined($ticks)
+            && "$pid:$ticks" eq ($saved->{old_process_identity} // '');
+        if (sysopen(my $pipe, '/run/wdi/restart.fifo', O_WRONLY | O_NONBLOCK)) {
+            my $command = 'restart:app:' . ($ctx->{health}{process_identity} // 'missing') . "\n";
+            my $written = syswrite($pipe,$command);
+            my $ok = defined($written) && $written == length($command);
             close $pipe;
             if ($ok) {
+                $saved->{attempts} = ($saved->{attempts} // 0) + 1;
                 $saved->{phase} = 'restarting';
                 delete $saved->{error};
                 emit($ctx, 'grass_event', {event => 'accepted', action => $action, reason => $reason});
@@ -379,17 +362,28 @@ sub main {
         }
         $saved->{policy} = $POLICY;
     }
-    open my $output, '>&', \*STDOUT or die "Container log stream unavailable\n";
-    $output->autoflush(1);
+    # A bounded private pipe isolates recovery decisions from a blocked log sink.
+    pipe my $log_read, my $output or die "Container log pipe unavailable\n";
+    my $writer = fork();
+    die "Container log writer unavailable\n" unless defined $writer;
+    if (!$writer) {
+        close $output;
+        STDOUT->autoflush(1);
+        while (my $line = <$log_read>) { print STDOUT $line; }
+        exit 0;
+    }
+    close $log_read;
+    fcntl($output,F_SETFL,fcntl($output,F_GETFL,0) | O_NONBLOCK) or die "Container log pipe mode unavailable\n";
+    $SIG{PIPE} = 'IGNORE';
+    $SIG{CHLD} = 'IGNORE';
     my $ctx = {instance => $instance, machine => $machine, group_id => $group,
         container_run => $container_run, run => $container_run . ':' . now_ms(), output => $output,
         runtime => "$boot_id:$stat[19]",
-        seq => 0, recovery => $saved, health => {state => 'starting', observed_ms => now_ms()},
-        http => HTTP::Tiny->new(timeout => 8, verify_SSL => 1, agent => 'WDI/1.0')};
+        seq => 0, recovery => $saved, health => {state => 'starting', observed_ms => now_ms()}};
     my $quit = 0;
     $SIG{TERM} = sub { $quit = 1 };
     $SIG{INT} = sub { $quit = 1 };
-    my ($next_health, $next_sample, $failures) = (0, 0, 0);
+    my ($next_health, $next_sample) = (0, 0);
     emit($ctx, 'grass_event', {event => 'worker_started', policy => $POLICY});
     while (!$quit) {
         my $at = now_ms();
@@ -402,20 +396,8 @@ sub main {
         if ($at >= $next_health) {
             $ctx->{health} = observe($ctx);
             my $health = $ctx->{health};
-            if ($health->{http_attempted}) {
-                $failures = $health->{state} eq 'unknown' && !$health->{telemetry_missing} ? $failures + 1 : 0;
-                if ($failures) {
-                    my $pause = $health->{retry_after_ms} // ($HEALTH_MS * 2 ** ($failures > 5 ? 5 : $failures));
-                    $pause = $HEALTH_MS if $pause < $HEALTH_MS;
-                    $saved->{provider_retry_ms} = now_ms() + $pause;
-                    $ctx->{provider_error} = $health->{error};
-                } else {
-                    delete $saved->{provider_retry_ms};
-                    delete $ctx->{provider_error};
-                }
-            }
             $next_health = now_ms() + $HEALTH_MS;
-            $health->{next_check_ms} = ($saved->{provider_retry_ms} // 0) > $next_health ? $saved->{provider_retry_ms} : $next_health;
+            $health->{next_check_ms} = $next_health;
             if (($saved->{phase} // '') =~ /\A(?:restarting|restart_unconfirmed)\z/ && recovery_confirmed($health, $saved)) {
                 $saved->{phase} = 'recovered';
                 $saved->{resolved_ms} = now_ms();

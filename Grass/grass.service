@@ -6,12 +6,28 @@ Wants=network-online.target
 [Service]
 Type=simple
 User=root
+Group=salad
 WorkingDirectory=/opt/wdi
 EnvironmentFile=/etc/wdi/grass.env
 ExecStart=/usr/bin/python3 /opt/wdi/grass.py --group ${GRASS_GROUP}
 Restart=on-failure
 RestartSec=30
 UMask=0077
+LimitCORE=0
+MemorySwapMax=0
+NoNewPrivileges=true
+CapabilityBoundingSet=
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+RuntimeDirectory=wdi
+RuntimeDirectoryMode=0750
+ReadWritePaths=/var/lib/wdi /run/wdi
 
 [Install]
 WantedBy=multi-user.target

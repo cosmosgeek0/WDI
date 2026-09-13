@@ -1,255 +1,200 @@
-# Current Grass + Repocket runtime
+# Grass and Repocket runtime
 
-The exact deployed image is
-`images/grass-repocket-combined-20260913-1b52f43837f6.tar`.
-It loads as `wdi-grass:combined-20260913-1b52f43837f6` with manifest digest
-`sha256:1b52f43837f69529a7a0975fb54c200231b3641db54c371383de4aaa9e2c21f8`.
-The source in this folder matches that runtime. `recovery.json` records the
-current encrypted checkpoint, expected device identity, and required AWS secret
-version. [The root README](../README.md) explains how to obtain missing assets.
+Grass Desktop 7.6.1 and the pinned Repocket client share one Salad container.
+Their process trees, directories, credentials and socket-byte meters are
+separate. The controller runs on the existing Mumbai host.
 
-## How the running system connects
+The selected configuration is `wdi-us` / **WDI US**, one CPU, 1024 MB RAM,
+64 MB shared memory, batch priority and `country_codes: ["us"]`. These are
+Salad's documented resource minimums. The previous live allocation used about
+467 MB of memory and zero bytes in `/dev/shm`; 2048/256 MB were inherited limits,
+not measured requirements. Capacity and allocation delays remain controlled by
+Salad. Account quota currently permits 100 replicas; 200 needs a quota increase.
 
-```mermaid
-flowchart LR
-  AWS[AWS Secrets Manager] --> Controller[Mumbai grass.service]
-  State[Encrypted Grass database] --> Controller
-  ECR[Private ECR image] --> Salad[Salad container]
-  Controller -->|Salad inventory and verified SSH: restore identity and renew admission| Salad
-  Salad --> Grass[Grass Desktop 7.6.1]
-  Salad --> Repocket[Repocket 1.2.0]
-  Salad -->|IMDS: own reallocation after datacenter confirmation| SaladAPI[Salad allocation service]
+The published image is:
+
+```text
+163092837436.dkr.ecr.ap-south-1.amazonaws.com/grass-desktop@sha256:9ef067c61a3848c08f46ce29fa89413cd4d17c72a5ee92e2cf64b6fa82cc2b55
 ```
 
-The clients run on Salad, not on the EC2 server. One Mumbai controller preserves
-Grass installation keys and renews admission. Grass requires that controller and a restored account. A bare `docker run` starts the
-image but does not supply the Salad identity, SSH transport, account, or admission.
-No Codex, browser automation, or website collector is needed to operate the apps.
+Its archive is `images/runtime-20260913-9ef067c61a38.tar`. `recovery.json` records
+the checkpoint's actual counts, source hashes and runtime identities; it is not
+a claim that every requested replica has been allocated or earned credit.
 
-The combined container has the IP policy and both byte meters inside it. It
-checks its public IP every 30 seconds. A new address is classified by IPQuery;
-confirmed datacenter status holds both apps and requests its own reallocation
-through Salad IMDS. Unknown classification holds locally. A false datacenter flag
-means “not detected as datacenter,” not proof of residential status. Classifications
-for an unchanged IP are cached for an hour. There is no separate IP supervisor.
+## Credentials and authentication
 
-Each app has its own traced process tree. Counters measure successful TCP/UDP
-socket I/O, including protocol traffic and TLS framing. They are not provider
-credits or wire-level bytes. `GRASS_SAMPLE_V2`, `RP_MON`, and native policy events
-are emitted to Salad logs. The website reads them but does not control admission.
-
-## AWS access and prerequisites
-
-| Setting | Existing value |
+| Location | Material present |
 | --- | --- |
-| AWS account / region | `163092837436` / `ap-south-1` |
-| EC2 controller / instance role | `i-0c2e48a7ddc2dd010` / `mumbai-clean` |
-| EC2 SSH alias | `mumbai` on the original Mac only; not a portable credential |
-| Salad organization / project / group | `cosmosgeeketh` / `default` / `wdi-grass-continuity` |
-| ECR repository | `163092837436.dkr.ecr.ap-south-1.amazonaws.com/grass-desktop` |
-| AWS secret | `wdi/salad-access`; required versions are in `recovery.json` |
-| Live source / service | `/opt/wdi/grass.py`, `/opt/wdi/session.py` / `grass.service` |
-| Live identity / session | `/var/lib/wdi/grass.sqlite3`, `/var/lib/wdi/account-session.enc` |
-| Group selection | `/etc/wdi/grass.env` |
+| Secrets Manager `wdi/grass-account` | Account ID, access token and refresh-token value |
+| AWS KMS | Permanent Ed25519 device keys |
+| Mumbai memory | Account token and returned KMS signatures |
+| Salad relay | TLS ciphertext, then a short-lived director admission token |
+| Grass, UID 1000 | Public device/account/browser IDs and an unregistered allocation-local key |
+| Repocket, UID 1001 | Its own API key and private files |
 
-Use an authorized AWS CLI login, or the existing AWS Console session. Confirm
-`aws sts get-caller-identity --query Account --output text` returns the account
-above. AWS Console → Systems Manager → Run Command → `AWS-RunShellScript` runs
-root commands on the selected instance. The CLI equivalent is:
+New device keys are generated inside KMS. The original device key was imported
+and its public key and signature verified. Its active encrypted record now holds
+a KMS reference; prior encrypted recovery copies remain quarantined on Mumbai.
+Public IDs and key fingerprints are identifiers, not login credentials.
 
-```sh
-aws ssm send-command --region ap-south-1 \
-  --instance-ids i-0c2e48a7ddc2dd010 \
-  --document-name AWS-RunShellScript \
-  --parameters '{"commands":["systemctl is-active grass.service","python3 /opt/wdi/grass.py --status"]}' \
-  --query Command.CommandId --output text
-# Substitute the returned ID:
-aws ssm get-command-invocation --region ap-south-1 \
-  --instance-id i-0c2e48a7ddc2dd010 --command-id COMMAND_ID
-```
+A pinned patch changes the native desktop's director check-in URL to the local
+broker. It does not change the Rust bandwidth transport. The broker admits only
+the Grass UID and verifies its local signature. Mumbai constructs the permitted
+check-in fields, calls KMS Sign, and terminates TLS directly with
+`director.getgrass.io` through the worker's outbound TCP relay. The worker cannot
+read the reusable signature. TLS certificates and hostname are verified before
+the authorization header is sent.
 
-A replacement controller can use Ubuntu 24.04 on ARM64 or AMD64. Attach the
-`mumbai-clean` instance profile and enable SSM. Its role needs
-`secretsmanager:GetSecretValue` for the recorded secret versions and the ECR read
-permissions in `ecr-pull-policy.json`, plus SSM instance-management permissions.
-If a customer-managed KMS key protects that secret, the role also needs decrypt
-permission for that key. It needs outbound HTTPS to AWS, Salad and Grass, and
-outbound TCP to Salad's returned SSH host/port. No inbound website port is needed
-for these apps. The container images themselves are **Linux AMD64**.
+Only the director's short-lived token and bridge address return to the worker.
+The controller checks issuer, IP audience and expiration. The observed token
+lifetime was ten seconds; a token may be reused during its validity, and expiry
+is not claimed to terminate an established node connection. No data-path proxy
+or bandwidth cap was added. The five-second signing minimum limits authentication
+abuse, not native transfer speed.
 
-Keep the original AWS secret versions. The `ssh_private_key` field derives the
-AES-GCM encryption keys for saved installations; rotating it does not decrypt old
-state. The matching `ssh_public_key` must remain registered in the Salad account's
-SSH Keys page. The private key and Salad API key are read only in memory on AWS.
-[Salad's SSH instructions](https://docs.salad.com/container-engine/explanation/container-groups/ssh-and-terminal)
-show where the account-level public key is registered.
+Both apps run without capabilities or future privilege elevation. Separate
+UIDs, private directories, an X11 cookie and root-owned control files prevent
+ordinary cross-app access. Reads of process names handle arbitrary bytes and
+check ownership. Root writes reject directory symlinks. A host administrator
+still controls its machine and can disrupt service or take short-lived node
+tokens; the controller and its AWS account remain trusted components.
 
-## Load the exact image
+**Historical account exposure is not resolved.** Both known refresh tokens were
+revoked and rejected on reuse, but the older account access token still returned
+HTTP 200 afterward. Its declared expiry is **2027-09-06 18:24:04 UTC**. A password
+change must be followed by a rejection test; it cannot be assumed to invalidate
+old access. Grass may need to revoke it server-side. No account password, wallet
+passkey, email OTP or wallet private key was changed or exported, and no funds
+were moved. The secret's refresh-token value is revoked; runtime telemetry uses
+its still-valid access token and does not automatically refresh it.
 
-On a Docker host, from the WDI directory:
+Keep wallet recovery material in a different secret that this role cannot read.
+The runtime policy in `configuration/account-signing-policy.json` permits one
+account-secret read and Ed25519 signing only with this account's tagged node keys.
+Temporary provisioning and publishing permissions were removed after preparation.
+They are not required for steady-state workers. Earlier device-key or account-token copies are not revoked by KMS import.
 
-```sh
-docker load --input Grass/images/grass-repocket-combined-20260913-1b52f43837f6.tar
-```
+## Control, recovery and scale
 
-`configuration/salad-group.json` contains only current deployment settings.
-The runtime credential is represented by its encrypted recovery file, not a
-plaintext key. The creation command below builds the API request from it.
+`grass.py` owns identities, allocation assignments, unique account/IP leases and
+ordered permissions. Its verified SSH connections preserve machine fingerprints.
+A replacement reuses an available saved identity after the old lease expires;
+it never fabricates a replacement for an uncertain registration.
 
-ECR normally already holds these exact digests. If its images were deleted, load
-and push the saved images from an authorized Docker host. The operator needs ECR
-upload permissions (`InitiateLayerUpload`, `UploadLayerPart`, `CompleteLayerUpload`,
-`BatchCheckLayerAvailability`, `PutImage`, `GetAuthorizationToken`); repository
-creation additionally needs `CreateRepository`. The controller's pull policy does
-not grant upload permission. On an authorized Ubuntu Docker host, configure the
-[AWS ECR credential helper](https://github.com/awslabs/amazon-ecr-credential-helper)
-without a credential file cache, then run the push commands below:
+`--initialize COUNT` explicitly prepares the target number of identities.
+Creation intent and returned KMS ARNs are persisted. The signed registration
+matches the pinned native client's `GRASS-REGISTER-v1` protocol. Successful raw
+replies are encrypted and committed before parsing. An unattempted request or a
+saved successful reply can resume; an uncertain mutation is reported rather
+than silently replaced. Only registered KMS profiles are eligible for allocation.
+Provisioning uses a separate lock and does not stop earning workers.
 
-```sh
-apt-get install -y docker.io amazon-ecr-credential-helper
-export AWS_ECR_DISABLE_CACHE=true
-export DOCKER_CONFIG="$(mktemp -d)"
-trap 'rm -rf "$DOCKER_CONFIG"' EXIT
-printf '%s\n' '{"credHelpers":{"163092837436.dkr.ecr.ap-south-1.amazonaws.com":"ecr-login"}}' > "$DOCKER_CONFIG/config.json"
-```
+Cloudflare rate-limited the initial registration burst on 2026-09-13. The shared
+`/var/lib/wdi/grass-api-backoff.json` honors its Retry-After across account API
+calls, including restarts. Registration is paced and reuses the same key after
+an explicit HTTP 429. `wdi-node-provision.service` completed the rollout's 100-identity preparation at
+12:06 UTC on 2026-09-13. All 100 are registered; the owner controls the replica
+count in Salad. No additional initialization command is needed for 10 or 100.
 
-This configuration contains a helper name, not a password. The helper obtains
-fresh credentials from the authorized AWS identity for each registry operation.
+Existing lease renewal is carried in inspection requests. Provider lookups run
+outside the permission path, so missing account telemetry does not stop native
+traffic. Missing, stale and failed provider observations remain unavailable.
+The private, credential-free `/run/wdi/grass-account-observation.json` supplies
+account counts and original epoch fields to the website's `salad` user, with
+source timestamps preserved. The website never receives Grass account tokens.
 
-```sh
-# Current combined image:
-docker tag wdi-grass:combined-20260913-1b52f43837f6 \
-  163092837436.dkr.ecr.ap-south-1.amazonaws.com/grass-desktop:combined-20260913-1b52f43837f6
-docker push 163092837436.dkr.ecr.ap-south-1.amazonaws.com/grass-desktop:combined-20260913-1b52f43837f6
-```
+Native failure recovery remains bounded and visible. Repocket retries with
+backoff; a display or watchdog failure does not permanently stop the other app.
+Restart commands identify the observed process, and termination includes
+surviving process-group descendants. Log queues are bounded so a blocked log
+sink does not stop tracing or recovery. Dropped logs are counted.
 
-Confirm the pushed manifest digest matches the digest at the top of this file. ECR authentication tokens
-expire after 12 hours; obtain a fresh token for a later pull/deployment. See
-[AWS ECR authentication](https://docs.aws.amazon.com/AmazonECR/latest/userguide/registry_auth.html).
+The existing IP policy checks public IP periodically, caches classification of
+an unchanged IP, holds on unknown classification and reallocates confirmed
+datacenter addresses. Definitive reallocation rejection can recover after an IP
+change; uncertain submitted moves remain held. A false datacenter flag is not
+proof of a residential connection. IP lookup interruptions and strict admission
+checks can temporarily pause work; no zero-downtime guarantee is claimed.
 
-## Restore the controller from WDI
+`GRASS_SAMPLE_V2` and `RP_MON` count successful application process-tree socket
+I/O, including protocol bytes. They are not shared `eth0` counters, physical wire
+bytes, provider-delivered data or a promise of paid demand. Historical group IDs,
+cursors, counters and provider identities retain their original meaning.
 
-These are recovery commands for a missing controller, not an instruction to
-replace a healthy live database with an older checkpoint. Ensure the old
-controller is stopped before starting its replacement. Copy the WDI folder to
-`/opt/wdi-source` on the replacement through your authenticated file-transfer
-method. If using the original Mac, stage it with `rsync -az Grass Repocket
-mumbai:/home/ubuntu/wdi-source/`, then copy that staging directory to
-`/opt/wdi-source` through SSM. Do not copy the unrelated app folders.
+## Build and recovery
 
-Run as root on the replacement via SSM:
-
-```sh
-apt-get update
-apt-get install -y python3-boto3 python3-paramiko python3-cryptography openssl
-cd /opt/wdi-source
-install -d -m 755 /opt/wdi
-install -d -m 700 /var/lib/wdi /etc/wdi
-
-# Current combined controller:
-install -m 644 Grass/grass.py Grass/session.py /opt/wdi/
-
-install -m 600 Grass/state/grass.sqlite3 /var/lib/wdi/grass.sqlite3
-install -m 600 Grass/state/account-session.enc /var/lib/wdi/account-session.enc
-install -m 600 Grass/configuration/grass.env /etc/wdi/grass.env
-install -m 644 Grass/grass.service /etc/systemd/system/grass.service
-systemctl daemon-reload
-```
-
-Do not run `--initialize` during a restore. The saved database already has the
-installation keys. Do not run two controllers with copies of the same database.
-On a new host, lease recovery deliberately waits for old admission to expire
-before reusing an identity; an initial pause of several minutes can be expected.
-
-## Restore the Salad group
-
-If the original group exists with the expected image and settings, keep it and
-skip creation. If it was deleted, the following creates the exact configured
-one-replica group in a stopped state. Run from `/opt/wdi-source` on the AWS host.
-`account.py` decrypts the Repocket key and passes it to the deployment process
-through its environment, without printing or writing the key:
+Build with the complete Git LFS archives available:
 
 ```sh
-python3 Repocket/account.py python3 - <<'PY'
-import base64, json, os, urllib.request
-from pathlib import Path
-import boto3
-saved = json.loads(Path('Grass/configuration/salad-group.json').read_text())
-aws = boto3.Session(region_name='ap-south-1')
-access = json.loads(aws.client('secretsmanager').get_secret_value(SecretId='wdi/salad-access')['SecretString'])
-auth = aws.client('ecr').get_authorization_token()['authorizationData'][0]
-username, password = base64.b64decode(auth['authorizationToken']).decode().split(':', 1)
-container = {k: saved['container'][k] for k in ('command','resources','image_caching')}
-container['image'] = '163092837436.dkr.ecr.ap-south-1.amazonaws.com/grass-desktop@' + saved['container']['hash']
-container['environment_variables'] = {
-    'GRASS_ACCOUNT_ID': saved['container']['environment_variables']['GRASS_ACCOUNT_ID'],
-    'RP_API_KEY': os.environ['RP_API_KEY']}
-container['priority'] = saved['priority']
-container['registry_authentication'] = {'basic': {'username': username, 'password': password}}
-body = {k: saved[k] for k in ('name','display_name','replicas','restart_policy','country_codes')}
-body.update(autostart_policy=False, container=container)
-url = 'https://api.salad.com/api/public/organizations/cosmosgeeketh/projects/default/containers'
-request = urllib.request.Request(url, data=json.dumps(body).encode(), method='POST',
-    headers={'Salad-Api-Key': access['api_key'], 'Content-Type': 'application/json', 'User-Agent': 'WDI/1.0'})
-with urllib.request.urlopen(request, timeout=30) as response: result=json.load(response)
-print(json.dumps({k: result.get(k) for k in ('id','name','version','replicas')}))
-PY
+./Grass/build.sh Grass/images/base-7.6.1-v3.tar \
+  Repocket/images/repocket-1.2.0-filtered-45cd81b05271.tar
 ```
 
-The restored group receives a new Salad group ID. The controller selects its
-configured name and discovers that new ID; saved Grass device keys remain in the
-database. The saved runtime needs no command override, exposed container gateway,
-GPU, or external IP-reallocation service. Settings are 1 CPU, 2,048 MB RAM, 256 MB
-shared memory, one replica, batch priority, and `restart_policy=always`.
-[Salad's creation contract](https://docs.salad.com/reference/saladcloud-api/container-groups/create-container-group)
-defines this request format. If the group already exists with a different image,
-stop it and update its image/registry credentials through the Salad Portal or the
-PATCH API before starting the matching controller. Do not create a duplicate
-or update a healthy running group to test a backup.
-
-## Start, inspect and stop
-
-Start the controller on Mumbai:
+The output is `wdi-grass:node-auth`. The build validates the pinned ELF, embedded
+JS asset and static tracer before changing the single director URL. For exact
+recovery, load the published archive instead of rebuilding:
 
 ```sh
-logger -t wdi-grass 'Initiator: operator; reason: restore packaged Grass checkpoint; action: start controller'
-systemctl enable --now grass.service
+docker load -i Grass/images/runtime-20260913-9ef067c61a38.tar
 ```
 
-Start the selected group in the Salad Portal, or run this on the AWS host:
+AWS account `163092837436`, region `ap-south-1`, host `i-0c2e48a7ddc2dd010`,
+SSH alias `mumbai`, role `mumbai-clean`. Use unprivileged SSH for inspection and
+AWS SSM `AWS-RunShellScript`, CLI profile `default`, for authorized root work.
 
-```sh
-python3 - <<'PY'
-import boto3,json,urllib.request
-access=json.loads(boto3.client('secretsmanager',region_name='ap-south-1').get_secret_value(SecretId='wdi/salad-access')['SecretString'])
-url='https://api.salad.com/api/public/organizations/cosmosgeeketh/projects/default/containers/wdi-grass-continuity/start'
-request=urllib.request.Request(url,method='POST',headers={'Salad-Api-Key':access['api_key'],'User-Agent':'WDI/1.0'})
-with urllib.request.urlopen(request,timeout=30) as response: print('Start accepted:',response.status)
-PY
+Keep `wdi/salad-access` and every version listed in `recovery.json`: its SSH-key
+material derives the encrypted checkpoint key. Keep the separate account secret
+and all referenced KMS keys. The account-secret schema is:
+
+```json
+{"account_id":"ACCOUNT_ID","access_token":"ACCESS_TOKEN","refresh_token":"REFRESH_TOKEN"}
 ```
 
-For shutdown, change the final endpoint to `/stop`, then stop `grass.service`.
-The service does not scale or create Salad groups by itself. `--status` reads the
-last saved result: check its `age_seconds`, not just the process status. On a new
-host that file is absent until the first controller cycle completes.
+Populate it through an authorized Secrets Manager workflow on the trusted host;
+never put values in source, shell arguments, logs or Salad configuration.
 
-After the first controller cycle and the Salad allocation starts, inspect:
+On a replacement trusted host, install Python, boto3, paramiko, cryptography and
+OpenSSL. Stop the existing controller before restoring the saved database to
+`/var/lib/wdi/grass.sqlite3`; keep that directory 0700 and its files 0600, owned by
+root. Use SQLite's backup API for live snapshots, retain the encryption versions,
+and check `PRAGMA quick_check`. Do not restore over a running writer or start two
+allocation controllers.
 
-```sh
-python3 /opt/wdi/grass.py --status
-journalctl -u grass.service -n 30 --no-pager
-```
+Install `grass.py`, `session.py`, `kms_nodes.py` and `migrate_account.py` in
+`/opt/wdi`; install `grass.service` and `configuration/grass.env`. The `salad`
+group is required for the private website observation. Apply the scoped runtime
+IAM policy to the replacement host and preserve the KMS key tags and policies.
+Then reload systemd and enable/start `grass.service`.
 
-Verify one allocated/running container, a fresh controller cycle, the restored
-Grass device ID from `recovery.json`/the database, and separate connected Grass
-and Repocket records in Salad logs. Provider confirmation and traffic amounts
-must come from fresh observations; a running PID does not establish earnings.
-Do not restart or reallocate merely because paid traffic is idle.
+For a historical checkpoint containing account tokens, stop the controller and
+run `migrate_account.py` first in preview mode, then with `--apply`. For historical
+private device keys, run `kms_nodes.py` with the required temporary import rights
+while the controller is stopped. Current checkpoints already contain KMS
+references. Do not deploy the historical combined image with an account session.
 
-## Rebuild instead of loading
+A new Salad group needs fresh private-registry authentication and the two runtime
+environment values shown in `configuration/salad-group.json`; recover the
+Repocket value from its encrypted checkpoint on AWS. Salad copies a prepared
+image into its own storage, so existing groups distribute that retained image to
+new nodes. A private image-source update requires fresh registry authentication.
 
-The exact saved archives above are preferred for recovery. To build a changed
-combined release, run `cd Grass && ./build.sh images/base-7.6.1-v3.tar` from an
-AMD64-capable Docker host. The required Repocket archive and static tracer are
-in the sibling Repocket folder. This rebuild may change image metadata and its
-digest; load the saved combined archive when the exact deployed digest is needed.
+## Verification and limits
+
+Thirty-four independent, bounded reviews were completed, followed by critiques
+of their repairs. Tests covered node-only serialization, registration retry and
+saved-reply recovery, KMS signatures, the full TLS broker path, wrong-host
+certificate rejection and cross-UID admission. A native Linux meter test sent and
+received exactly 8,388,608 bytes while stdout was deliberately blocked; traffic
+completed and dropped logs were counted. The final image's source hashes match
+the reviewed checkout. The live U.S. allocation preserved device `DV01M2BK8GZMEFV96GA1S9K`,
+with IP `68.12.46.69`, provider confirmation and score 100. Both native app meters
+were valid and increasing; neither app had a runtime error. Live identities and
+checkpoint observations are recorded in `recovery.json`.
+
+This evidence does not certify every provider endpoint, eliminate host compromise,
+guarantee paid traffic or resolve the historical access-token exposure.
+
+References: [Salad resources](https://docs.salad.com/reference/saladcloud-api/container-groups/create-container-group),
+[Salad image distribution](https://docs.salad.com/container-engine/explanation/infrastructure-platform/container-registries),
+[AWS KMS signing](https://docs.aws.amazon.com/kms/latest/APIReference/API_Sign.html),
+[Secrets Manager guidance](https://docs.aws.amazon.com/secretsmanager/latest/userguide/best-practices.html).

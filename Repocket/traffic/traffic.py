@@ -7,11 +7,13 @@ import ipaddress
 import json
 import math
 import os
+import queue
 from pathlib import Path
 import re
 import selectors
 import signal
 import subprocess
+import threading
 import time
 import uuid
 
@@ -173,6 +175,24 @@ def main():
         pass_fds=(trace_write,), stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
         start_new_session=True, preexec_fn=tracer_parent_death)
     os.close(trace_write)
+    # Container-log backpressure must never stop draining the syscall pipe.
+    logs = queue.Queue(maxsize=256)
+    log_dropped = 0
+    def write_logs():
+        for line in iter(logs.get, None):
+            try:
+                data=(line+'\n').encode()
+                while data:data=data[os.write(1,data):]
+            except OSError:pass
+    writer = threading.Thread(target=write_logs,daemon=True)
+    writer.start()
+    def log(line):
+        nonlocal log_dropped
+        if len(line.encode())>65536:
+            log_dropped+=1
+            return
+        try:logs.put_nowait(line)
+        except queue.Full:log_dropped+=1
 
     def stop(signum, frame):
         nonlocal stopped, stop_deadline
@@ -204,9 +224,9 @@ def main():
                    group_id=identity["group"], instance=identity["instance"],
                    machine=identity["machine"], run=identity["instance"] + ":" + str(started),
                    started_ms=started, time_ms=wall, seq=seq, kind=kind,
-                   counter_id=counter_id, phase=phase, device_id=device, **extra)
+                   counter_id=counter_id, phase=phase, device_id=device, log_dropped=log_dropped, **extra)
         seq += 1
-        print("RP_MON " + json.dumps(row, separators=(",", ":")), flush=True)
+        log("RP_MON " + json.dumps(row, separators=(",", ":")))
 
     emit("start", started, ip=interval_ip, reason=gate_error or "socket-I/O tracer started")
     while True:
@@ -242,13 +262,17 @@ def main():
                         accounting_error = str(error)
                 else:
                     # The command must already apply its app's credential-log filtering.
-                    print(line, flush=True)
+                    log(line)
                     native = re.search(r"peer (\w+);.*device_id=([a-zA-Z0-9]*);", line)
                     if native and args.application == "repocket":
                         phase = "connected" if native[1] == "connected" else "connecting"
                         device = native[2] or device
                     if line.startswith("strace:") and any(s in line for s in ("Operation not permitted", "Permission denied", "invalid", "Can't", "Cannot")):
                         accounting_error = "strace could not observe the application"
+            if len(buffers[stream])>2_000_000:
+                buffers[stream]=b''
+                if stream=='trace':accounting_error='oversized syscall record'
+                else:log_dropped+=1
         wall, boot = clocks()
         ip, gate_error = network(args.network_state, identity, wall, boot)
         interval_error = interval_error or gate_error or ("IP boundary" if ip != interval_ip else None)
@@ -267,7 +291,7 @@ def main():
                          measurement="socket_io_payload_bytes", counter_id=counter_id,
                          scope=identity, source_ms=wall, monotonic_ms=boot,
                          rx=rx if not error else None, tx=tx if not error else None,
-                         valid=not error, error=error, final=final,
+                         valid=not error, error=error, final=final, log_dropped=log_dropped,
                          running=tracer.poll() is None,
                          ip=ip, phase=phase, device_id=device)
             temporary = args.output.with_name(args.output.name + "." + str(os.getpid()) + ".tmp")
@@ -299,6 +323,9 @@ def main():
         try:
             child, _ = os.waitpid(-1, os.WNOHANG)
         except ChildProcessError:
+            try:logs.put_nowait(None)
+            except queue.Full:pass
+            writer.join(timeout=2)
             return result if result >= 0 else 128 - result
         if child == 0:
             time.sleep(0.02)

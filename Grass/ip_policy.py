@@ -30,6 +30,8 @@ def check():
     try:
         address = public_ip()['public_ip']
         result['ip'] = address
+        if old.get('ip')==address:
+            result.update({k:old[k] for k in ('reallocation_retry_at','reallocation_rejected') if k in old})
         if old.get('ip') == address and now < old.get('classification_until', 0):
             result.update({k:old[k] for k in ('is_datacenter', 'allowed', 'observed_ms', 'country',
                                               'classification_until', 'error') if k in old})
@@ -96,6 +98,18 @@ def reallocate(policy):
             if response.status != 204:
                 raise ValueError('unexpected_reallocation_response')
         current['reallocation_accepted'] = True
+    except urllib.error.HTTPError as error:
+        # A definitive rejection did not schedule a move. Recheck the IP and
+        # retry only after the server's backoff; retain holds on lost replies.
+        after = error.headers.get('Retry-After','')
+        delay = max(30,min(3600,int(after))) if after.isdigit() else 60
+        current['error']='reallocation_http_'+str(error.code)
+        if error.code in (400,403,404,429):
+            current.update(reallocation_requested=False,reallocation_accepted=False,
+                           reallocation_rejected=error.code!=429,
+                           reallocation_retry_at=time.clock_gettime(time.CLOCK_BOOTTIME)+delay)
+        else:
+            current['reallocation_accepted']=None
     except (OSError, ValueError) as error:
         current.update(reallocation_accepted=None,
                        error=str(error) if type(error) is ValueError else type(error).__name__)
