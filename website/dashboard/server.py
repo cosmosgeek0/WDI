@@ -269,16 +269,6 @@ def grass_registration_fields(value, now):
     return out
 
 
-def grass_supervisor_fields(value, now):
-    value = value if isinstance(value,dict) else {}
-    output = {k:value.get(k) for k in ('scope','target_replicas','observed_ms','status','mode','requests_24h')}
-    policy = value.get('policy') or {}
-    output['policy'] = {k:policy.get(k) for k in ('bad_duration_ms','fleet_cooldown_ms','max_actions_hour','max_actions_day')}
-    at = output['observed_ms']
-    output['fresh'] = value.get('fresh') is True and isinstance(at,(int,float)) and 0 <= now-at <= 150000
-    return output
-
-
 def grass_history(db, group, start, end):
     """Use exact saved run/IP totals; read only the smaller clipped boundary.
 
@@ -1445,7 +1435,8 @@ def make_handler(store: Store, status_provider: Callable[[], Dict[str, Any]], st
                     if service == 'grass':
                         result['provider_points'] = grass_points_fields(source.get('provider_points'), now)
                         result['account_registration'] = grass_registration_fields(source.get('account_registration'), now)
-                        result['supervisor'] = grass_supervisor_fields(source.get('supervisor'), now)
+                        policy = source.get('supervisor')
+                        result['supervisor'] = {k:policy.get(k) for k in ('scope','status','observed_ms')} if isinstance(policy,dict) else {}
                     recent = lambda value: isinstance(value, (int, float)) and 0 <= now - value <= 90000
                     generated = result["generated_ms"]
                     current = (isinstance(generated, (int, float)) and -10000 <= now - generated <= 90000

@@ -883,21 +883,20 @@ def poll_source(key, target, previous, registration_owner=True):
         return source, []
 
 
-def grass_supervisor(db, sources, now):
+def ip_policy_event(db, sources):
     """Describe the native IP owner from its original events, never old host policy."""
     groups=[source['group_id'] for source in sources]
     rows=db.execute("SELECT body FROM events WHERE json_extract(body,'$.source_format')='GRASS_PRIVATE_EVENT_V1' "
         "AND json_extract(body,'$.group_id') IN ("+','.join('?' for _ in groups)+") ORDER BY source_ms DESC LIMIT 1", groups).fetchall() if groups else []
     latest=json.loads(rows[0][0]) if rows else {};policy=latest.get('policy') or {}
-    status='Awaiting native IP classification'
+    status='No native IP-policy event received'
     if latest.get('event')=='ip_classified':
         status='Datacenter IP rejected' if policy.get('is_datacenter') is True else 'IP admitted by native check' if policy.get('allowed') is True else 'IP classification unavailable; admission held'
     elif latest.get('event')=='reallocation_result':
         status='Salad accepted native reallocation' if policy.get('reallocation_accepted') is True else 'Native reallocation response uncertain'
     elif latest.get('event')=='reallocation_requested':status='Native reallocation requested'
     elif latest.get('event')=='reallocation_not_sent':status='Native reallocation was not sent'
-    return dict(scope='container_ip_policy',mode='In container',target_replicas=sum(s['replicas'] for s in sources),
-        status=status,observed_ms=latest.get('source_ms'),fresh=False)
+    return dict(scope='container_ip_policy',status=status,observed_ms=latest.get('source_ms'))
 
 
 def publish(db, sources, history_note=None):
@@ -908,7 +907,7 @@ def publish(db, sources, history_note=None):
     inventory_ms = min((s.get('inventory_ms') or 0 for s in sources), default=0) or None
     error = '; '.join(s['organization']+'/'+s['group_name']+': '+s['error'] for s in sources if s.get('error')) or None
     output = view(db, inventory, inventory_ms, sum(s['replicas'] for s in sources), error, history_note, sources=sources)
-    output['supervisor'] = grass_supervisor(db, sources, output['generated_ms'])
+    output['supervisor'] = ip_policy_event(db, sources)
     save(DATA/'view.json', output)
     print(json.dumps({k: output[k] for k in ('generated_ms','running','confirmed','unverified','total_mb','error','sources')}, separators=(',', ':')), flush=True)
     return output
