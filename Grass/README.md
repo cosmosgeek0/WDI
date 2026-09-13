@@ -126,8 +126,8 @@ cursors, counters and provider identities retain their original meaning.
 Build with the complete Git LFS archives available:
 
 ```sh
-./Grass/build.sh Grass/images/base-7.6.1-v3.tar \
-  Repocket/images/repocket-1.2.0-filtered-45cd81b05271.tar
+./Grass/build.sh "$PWD/Grass/images/base-7.6.1-v3.tar" \
+  "$PWD/Repocket/images/repocket-1.2.0-filtered-45cd81b05271.tar"
 ```
 
 The output is `wdi-grass:node-auth`. The build validates the pinned ELF, embedded
