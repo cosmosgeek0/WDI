@@ -1,1 +1,0 @@
-"""Local Salad bandwidth dashboard."""

@@ -6,7 +6,7 @@ each with its own process tree and output file; never wrap the combined init.
 
 Copy `traffic.py`, `bin/strace` and `LICENSE.strace` into the image. The tracer is
 static Linux AMD64; Python 3 is required. `build-tracer.sh` can download the
-hash-checked official source and rebuild it. Artifact hashes and check results
+hash-checked official source and rebuild it. Pinned source and binary hashes
 are in `build.json`.
 
 ```sh

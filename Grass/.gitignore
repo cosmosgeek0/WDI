@@ -1,5 +1,5 @@
-# Local release artifacts and private encrypted recovery snapshots.
-images/
-state/
+# Large archives are GitHub release assets; encrypted checkpoints are committed.
+images/*
+comparison/
 __pycache__/
 .DS_Store

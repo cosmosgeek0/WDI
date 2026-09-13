@@ -4,7 +4,7 @@
     "command": [],
     "environment_variables": {
       "GRASS_ACCOUNT_ID": "3J6jD6FnED85tCL9fK1tAl0r014",
-      "RP_API_KEY": "<runtime credential recovered from Repocket/state/account.enc>"
+      "RP_API_KEY": "[encrypted recovery: Repocket/state/account.enc]"
     },
     "hash": "sha256:1b52f43837f69529a7a0975fb54c200231b3641db54c371383de4aaa9e2c21f8",
     "image": "163092837436.dkr.ecr.ap-south-1.amazonaws.com/grass-desktop:combined-20260913-1b52f43837f6",
@@ -14,34 +14,14 @@
       "gpu_classes": [],
       "memory": 2048,
       "shm_size": 256
-    },
-    "size": 287616271
-  },
-  "country_codes": [],
-  "create_time": "2026-09-12T19:30:59.3058948+00:00",
-  "current_state": {
-    "description": "",
-    "finish_time": "2026-09-12T19:30:59.3058948+00:00",
-    "instance_status_counts": {
-      "allocating_count": 0,
-      "creating_count": 0,
-      "running_count": 1,
-      "stopping_count": 0
-    },
-    "start_time": "2026-09-12T19:44:51.9114103+00:00",
-    "status": "running"
+    }
   },
   "display_name": "Grass continuity",
-  "id": "f920ace4-242f-4456-a442-f5bbe8b6b5ad",
   "name": "wdi-grass-continuity",
   "organization_name": "cosmosgeeketh",
-  "pending_change": false,
-  "priority": "batch",
   "project_name": "default",
+  "priority": "batch",
   "replicas": 1,
   "restart_policy": "always",
-  "scaling-actions": [],
-  "scheduled-scaling-enabled": false,
-  "update_time": "2026-09-13T03:53:48.4556405+00:00",
-  "version": 9
+  "country_codes": []
 }

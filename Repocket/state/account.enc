@@ -1,0 +1,8 @@
+{
+  "format": 1,
+  "secret_id": "wdi/salad-access",
+  "secret_version": "bb55155b-f375-499d-9839-033539eabddb",
+  "purpose": "wdi/repocket/account-v1",
+  "nonce": "iDE47yo1fbDLygeM",
+  "ciphertext": "rHLuutztPdiIKZ0YreUWUD0D+5ZFixYR4MqIDGcjzysaMzA9MwKNhSMyry5QAYELIKfemTTu3pIvxCcJr2RFFIMMOVLYGA=="
+}

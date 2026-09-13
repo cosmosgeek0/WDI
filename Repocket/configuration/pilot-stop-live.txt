@@ -1,5 +1,0 @@
-TimersMonotonic={ OnActiveUSec=1d ; next_elapse=1d 20h 38min 2.100914s }
-NextElapseUSecRealtime=
-NextElapseUSecMonotonic=1d 20h 38min 2.100914s
-ActiveState=active
-ExecStart={ path=/usr/bin/python3 ; argv[]=/usr/bin/python3 /opt/wdi/integrations/repocket/salad.py stop ; ignore_errors=no ; start_time=[n/a] ; stop_time=[n/a] ; pid=0 ; code=(null) ; status=0/0 }

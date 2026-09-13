@@ -1,0 +1,44 @@
+{
+  "captured_ms": 1789276202662,
+  "controller_instance": "i-0c2e48a7ddc2dd010",
+  "aws_region": "ap-south-1",
+  "aws_account": "163092837436",
+  "controller_role": "mumbai-clean",
+  "secret_id": "wdi/salad-access",
+  "secret_arn": "arn:aws:secretsmanager:ap-south-1:163092837436:secret:wdi/salad-access-geRxJQ",
+  "required_secret_versions": [
+    "bb55155b-f375-499d-9839-033539eabddb"
+  ],
+  "encryption_verified": true,
+  "profiles": 1,
+  "registered_profiles": 1,
+  "repocket_key_matches_live_group": true,
+  "group": {
+    "id": "f920ace4-242f-4456-a442-f5bbe8b6b5ad",
+    "name": "wdi-grass-continuity",
+    "version": 9,
+    "replicas": 1,
+    "priority": "batch",
+    "restart_policy": "always"
+  },
+  "image": "163092837436.dkr.ecr.ap-south-1.amazonaws.com/grass-desktop:combined-20260913-1b52f43837f6",
+  "image_digest": "sha256:1b52f43837f69529a7a0975fb54c200231b3641db54c371383de4aaa9e2c21f8",
+  "source_hashes": {
+    "grass.py": "e9e61ce51ff66b4412b382b63d0a01136a6c0b5ff3bae78110acdb81c793bcfb",
+    "session.py": "a0e5e3c60f9b5aca055a74244c00a6583da5ff22a893d6171a069687069d3251"
+  },
+  "checkpoint_hashes": {
+    "grass.sqlite3": "983160d41d424a460c194a2880d623ff3f3086165c7b2b006d7c559d65f4ff01",
+    "account-session.enc": "fdca1b2c89784484933d594ce11174d076e70b4b830957af7dedb3243414a780"
+  },
+  "status_observed_ms": 1789275879778,
+  "instances": [
+    {
+      "instance": "88bac587-c7fe-40c2-8ff0-0402e0abb0f2",
+      "machine": "4067cc6f-566b-7a5b-8e4f-92a00686688a",
+      "ip": "106.222.248.160",
+      "device": "DV01M2BK8GZMEFV96GA1S9K",
+      "state": "running"
+    }
+  ]
+}
