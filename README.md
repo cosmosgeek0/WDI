@@ -20,8 +20,10 @@ from this GitHub package.
 | `Grass/state/account-session.enc`, `Repocket/state/account.enc` | Encrypted credentials needed to restore account access. |
 | `Grass/configuration/`, `Grass/recovery.json`, checksum files | Current launch settings, required AWS secret version, checkpoint time and integrity checks. |
 
-The image archives are committed at these paths using **Git LFS**. To recover
-through Git, install [Git LFS](https://git-lfs.com/), then:
+The image archives are committed at these paths using **Git LFS**. GitHub’s
+**Code → Download ZIP** is configured to include the actual images, so one ZIP
+contains the complete package. To recover through Git, install
+[Git LFS](https://git-lfs.com/), then:
 
 ```sh
 git lfs install
