@@ -1,0 +1,850 @@
+{
+  "items": [
+    {
+      "json_log": {
+        "message": "Container Group Started"
+      },
+      "receive_time": "2026-09-12T22:30:23.1247464+00:00",
+      "resource": {
+        "labels": {
+          "container_group_name": "repocket-eval",
+          "organization_id": "ecb54e6a-c530-4210-b396-b2a55e19ccc3",
+          "organization_name": "cosmosgeeketh",
+          "project_name": "default"
+        },
+        "type": "deployment_controller"
+      },
+      "severity": "info",
+      "time": "2026-09-12T22:30:21.3279091+00:00"
+    },
+    {
+      "json_log": {
+        "message": "Instance Allocated",
+        "gpu_class_name": ""
+      },
+      "receive_time": "2026-09-12T22:30:26.1490615+00:00",
+      "resource": {
+        "labels": {
+          "container_group_name": "repocket-eval",
+          "container_group_version": "1",
+          "instance_id": "57444382-ba73-4449-b794-d409b174ac67",
+          "machine_id": "619e52cd-c663-2e59-8bcd-2e02ccaef0ec",
+          "organization_id": "ecb54e6a-c530-4210-b396-b2a55e19ccc3",
+          "organization_name": "cosmosgeeketh",
+          "project_name": "default"
+        },
+        "type": "instance_controller"
+      },
+      "severity": "info",
+      "time": "2026-09-12T22:30:25.747284+00:00"
+    },
+    {
+      "json_log": {
+        "gpu_class_name": "",
+        "message": "Instance Allocated"
+      },
+      "receive_time": "2026-09-12T22:30:43.2789363+00:00",
+      "resource": {
+        "labels": {
+          "container_group_name": "repocket-eval",
+          "container_group_version": "1",
+          "instance_id": "ca3080f1-2f2a-4aeb-9ece-6fe245ba15f4",
+          "machine_id": "7eaae63d-d549-2359-85d9-7662d5fbc682",
+          "organization_id": "ecb54e6a-c530-4210-b396-b2a55e19ccc3",
+          "organization_name": "cosmosgeeketh",
+          "project_name": "default"
+        },
+        "type": "instance_controller"
+      },
+      "severity": "info",
+      "time": "2026-09-12T22:30:42.8673319+00:00"
+    },
+    {
+      "json_log": {
+        "gpu_class_name": "",
+        "message": "Instance Allocated"
+      },
+      "receive_time": "2026-09-12T22:31:07.7260209+00:00",
+      "resource": {
+        "labels": {
+          "container_group_name": "repocket-eval",
+          "container_group_version": "1",
+          "instance_id": "d724d64a-0c3a-4b6e-8a48-75a4b7e6051d",
+          "machine_id": "d44cd889-feed-fc58-8252-fbfa65e5c5c4",
+          "organization_id": "ecb54e6a-c530-4210-b396-b2a55e19ccc3",
+          "organization_name": "cosmosgeeketh",
+          "project_name": "default"
+        },
+        "type": "instance_controller"
+      },
+      "severity": "info",
+      "time": "2026-09-12T22:31:07.2369011+00:00"
+    },
+    {
+      "json_log": {
+        "gpu_class_name": "",
+        "message": "Instance Allocated"
+      },
+      "receive_time": "2026-09-12T22:31:58.1810835+00:00",
+      "resource": {
+        "labels": {
+          "container_group_name": "repocket-eval",
+          "container_group_version": "1",
+          "instance_id": "bc8f3adc-0c4c-40d5-a33b-b98a28d40a6d",
+          "machine_id": "d03ec532-27d8-8b5d-bfab-c8ca62e12b74",
+          "organization_id": "ecb54e6a-c530-4210-b396-b2a55e19ccc3",
+          "organization_name": "cosmosgeeketh",
+          "project_name": "default"
+        },
+        "type": "instance_controller"
+      },
+      "severity": "info",
+      "time": "2026-09-12T22:31:57.2506506+00:00"
+    },
+    {
+      "json_log": {
+        "gpu_class_name": "",
+        "message": "Instance Allocated"
+      },
+      "receive_time": "2026-09-12T22:33:28.2021166+00:00",
+      "resource": {
+        "labels": {
+          "container_group_name": "repocket-eval",
+          "container_group_version": "1",
+          "instance_id": "e4d7aad1-e5be-4eff-97b5-cb5c97ab33ac",
+          "machine_id": "d372b3a0-716e-8950-905d-b0ed471d4f81",
+          "organization_id": "ecb54e6a-c530-4210-b396-b2a55e19ccc3",
+          "organization_name": "cosmosgeeketh",
+          "project_name": "default"
+        },
+        "type": "instance_controller"
+      },
+      "severity": "info",
+      "time": "2026-09-12T22:33:27.5449026+00:00"
+    },
+    {
+      "json_log": {
+        "message": "Container Group Stopped"
+      },
+      "receive_time": "2026-09-12T22:36:15.1984268+00:00",
+      "resource": {
+        "labels": {
+          "container_group_name": "repocket-eval",
+          "organization_id": "ecb54e6a-c530-4210-b396-b2a55e19ccc3",
+          "organization_name": "cosmosgeeketh",
+          "project_name": "default"
+        },
+        "type": "deployment_controller"
+      },
+      "severity": "info",
+      "time": "2026-09-12T22:36:15.1424603+00:00"
+    },
+    {
+      "json_log": {
+        "message": "Container Group Started"
+      },
+      "receive_time": "2026-09-12T22:48:31.0255407+00:00",
+      "resource": {
+        "labels": {
+          "container_group_name": "repocket-eval",
+          "organization_id": "ecb54e6a-c530-4210-b396-b2a55e19ccc3",
+          "organization_name": "cosmosgeeketh",
+          "project_name": "default"
+        },
+        "type": "deployment_controller"
+      },
+      "severity": "info",
+      "time": "2026-09-12T22:48:30.2490961+00:00"
+    },
+    {
+      "json_log": {
+        "gpu_class_name": "",
+        "message": "Instance Allocated"
+      },
+      "receive_time": "2026-09-12T22:48:35.4469743+00:00",
+      "resource": {
+        "labels": {
+          "container_group_name": "repocket-eval",
+          "container_group_version": "1",
+          "instance_id": "b83e0627-aa2f-4c27-a7c9-d3ab3cbcb82c",
+          "machine_id": "3b217573-b26e-fc52-abf9-646b5f4550e5",
+          "organization_id": "ecb54e6a-c530-4210-b396-b2a55e19ccc3",
+          "organization_name": "cosmosgeeketh",
+          "project_name": "default"
+        },
+        "type": "instance_controller"
+      },
+      "severity": "info",
+      "time": "2026-09-12T22:48:34.6346107+00:00"
+    },
+    {
+      "json_log": {
+        "gpu_class_name": "",
+        "message": "Instance Allocated"
+      },
+      "receive_time": "2026-09-12T22:48:51.1174133+00:00",
+      "resource": {
+        "labels": {
+          "container_group_name": "repocket-eval",
+          "container_group_version": "1",
+          "instance_id": "5fe519f0-7e59-4aeb-9c75-e47ebe78cfb9",
+          "machine_id": "a416d567-c9fc-8e5b-85c7-32df7d6a972f",
+          "organization_id": "ecb54e6a-c530-4210-b396-b2a55e19ccc3",
+          "organization_name": "cosmosgeeketh",
+          "project_name": "default"
+        },
+        "type": "instance_controller"
+      },
+      "severity": "info",
+      "time": "2026-09-12T22:48:50.4525039+00:00"
+    },
+    {
+      "json_log": {
+        "container_group_version": "2",
+        "message": "Container Group Updated"
+      },
+      "receive_time": "2026-09-12T22:48:53.4112158+00:00",
+      "resource": {
+        "labels": {
+          "container_group_name": "repocket-eval",
+          "organization_id": "ecb54e6a-c530-4210-b396-b2a55e19ccc3",
+          "organization_name": "cosmosgeeketh",
+          "project_name": "default"
+        },
+        "type": "deployment_controller"
+      },
+      "severity": "info",
+      "time": "2026-09-12T22:48:53.2959058+00:00"
+    },
+    {
+      "json_log": {
+        "message": "Container Group Stopped"
+      },
+      "receive_time": "2026-09-12T22:49:33.5927849+00:00",
+      "resource": {
+        "labels": {
+          "container_group_name": "repocket-eval",
+          "organization_id": "ecb54e6a-c530-4210-b396-b2a55e19ccc3",
+          "organization_name": "cosmosgeeketh",
+          "project_name": "default"
+        },
+        "type": "deployment_controller"
+      },
+      "severity": "info",
+      "time": "2026-09-12T22:49:30.4432656+00:00"
+    },
+    {
+      "json_log": {
+        "message": "Container Group Started"
+      },
+      "receive_time": "2026-09-12T22:50:08.7754597+00:00",
+      "resource": {
+        "labels": {
+          "container_group_name": "repocket-eval",
+          "organization_id": "ecb54e6a-c530-4210-b396-b2a55e19ccc3",
+          "organization_name": "cosmosgeeketh",
+          "project_name": "default"
+        },
+        "type": "deployment_controller"
+      },
+      "severity": "info",
+      "time": "2026-09-12T22:50:08.3906208+00:00"
+    },
+    {
+      "json_log": {
+        "gpu_class_name": "",
+        "message": "Instance Allocated"
+      },
+      "receive_time": "2026-09-12T22:50:14.8257534+00:00",
+      "resource": {
+        "labels": {
+          "container_group_name": "repocket-eval",
+          "container_group_version": "2",
+          "instance_id": "523d41b1-681c-4486-83e9-a3ef6b0e15d2",
+          "machine_id": "115b3326-3317-4854-9a1d-60021dcfefb3",
+          "organization_id": "ecb54e6a-c530-4210-b396-b2a55e19ccc3",
+          "organization_name": "cosmosgeeketh",
+          "project_name": "default"
+        },
+        "type": "instance_controller"
+      },
+      "severity": "info",
+      "time": "2026-09-12T22:50:14.7829262+00:00"
+    },
+    {
+      "json_log": {
+        "gpu_class_name": "",
+        "message": "Instance Downloading"
+      },
+      "receive_time": "2026-09-12T22:50:49.3372294+00:00",
+      "resource": {
+        "labels": {
+          "container_group_name": "repocket-eval",
+          "container_group_version": "2",
+          "instance_id": "523d41b1-681c-4486-83e9-a3ef6b0e15d2",
+          "machine_id": "115b3326-3317-4854-9a1d-60021dcfefb3",
+          "organization_id": "ecb54e6a-c530-4210-b396-b2a55e19ccc3",
+          "organization_name": "cosmosgeeketh",
+          "project_name": "default"
+        },
+        "type": "instance_controller"
+      },
+      "severity": "info",
+      "time": "2026-09-12T22:50:46.6471132+00:00"
+    },
+    {
+      "json_log": {
+        "gpu_class_name": "",
+        "message": "Instance Allocated"
+      },
+      "receive_time": "2026-09-12T22:50:55.9677743+00:00",
+      "resource": {
+        "labels": {
+          "container_group_name": "repocket-eval",
+          "container_group_version": "2",
+          "instance_id": "9d25e39a-4c40-4d2d-bf13-2001e3b215d6",
+          "machine_id": "54704706-431a-aa5a-b9eb-10d27a24b09a",
+          "organization_id": "ecb54e6a-c530-4210-b396-b2a55e19ccc3",
+          "organization_name": "cosmosgeeketh",
+          "project_name": "default"
+        },
+        "type": "instance_controller"
+      },
+      "severity": "info",
+      "time": "2026-09-12T22:50:55.0171684+00:00"
+    },
+    {
+      "json_log": {
+        "gpu_class_name": "",
+        "message": "Instance Allocated"
+      },
+      "receive_time": "2026-09-12T22:51:13.7783637+00:00",
+      "resource": {
+        "labels": {
+          "container_group_name": "repocket-eval",
+          "container_group_version": "2",
+          "instance_id": "56c7fa51-2203-442e-a676-60b3f96e81b7",
+          "machine_id": "e963e725-6e82-a751-904a-53fa1a35a64c",
+          "organization_id": "ecb54e6a-c530-4210-b396-b2a55e19ccc3",
+          "organization_name": "cosmosgeeketh",
+          "project_name": "default"
+        },
+        "type": "instance_controller"
+      },
+      "severity": "info",
+      "time": "2026-09-12T22:51:12.6412699+00:00"
+    },
+    {
+      "json_log": {
+        "message": "Instance Allocated",
+        "gpu_class_name": ""
+      },
+      "receive_time": "2026-09-12T22:51:19.0107067+00:00",
+      "resource": {
+        "labels": {
+          "container_group_name": "repocket-eval",
+          "container_group_version": "2",
+          "instance_id": "dbb2dbfd-4cfe-4c95-839a-a9e418761403",
+          "machine_id": "5ecebf1d-57a9-ca5f-85b7-625d45884163",
+          "organization_id": "ecb54e6a-c530-4210-b396-b2a55e19ccc3",
+          "organization_name": "cosmosgeeketh",
+          "project_name": "default"
+        },
+        "type": "instance_controller"
+      },
+      "severity": "info",
+      "time": "2026-09-12T22:51:18.0559273+00:00"
+    },
+    {
+      "json_log": {
+        "gpu_class_name": "",
+        "message": "Instance Downloading"
+      },
+      "receive_time": "2026-09-12T22:51:19.1735953+00:00",
+      "resource": {
+        "labels": {
+          "container_group_name": "repocket-eval",
+          "container_group_version": "2",
+          "instance_id": "dbb2dbfd-4cfe-4c95-839a-a9e418761403",
+          "machine_id": "5ecebf1d-57a9-ca5f-85b7-625d45884163",
+          "organization_id": "ecb54e6a-c530-4210-b396-b2a55e19ccc3",
+          "organization_name": "cosmosgeeketh",
+          "project_name": "default"
+        },
+        "type": "instance_controller"
+      },
+      "severity": "info",
+      "time": "2026-09-12T22:51:19.0822418+00:00"
+    },
+    {
+      "json_log": {
+        "gpu_class_name": "",
+        "message": "Instance Starting"
+      },
+      "receive_time": "2026-09-12T22:51:29.2112091+00:00",
+      "resource": {
+        "labels": {
+          "container_group_name": "repocket-eval",
+          "container_group_version": "2",
+          "instance_id": "dbb2dbfd-4cfe-4c95-839a-a9e418761403",
+          "machine_id": "5ecebf1d-57a9-ca5f-85b7-625d45884163",
+          "organization_id": "ecb54e6a-c530-4210-b396-b2a55e19ccc3",
+          "organization_name": "cosmosgeeketh",
+          "project_name": "default"
+        },
+        "type": "instance_controller"
+      },
+      "severity": "info",
+      "time": "2026-09-12T22:51:28.2893227+00:00"
+    },
+    {
+      "receive_time": "2026-09-12T22:51:32.1644715+00:00",
+      "resource": {
+        "labels": {
+          "container_group_name": "repocket-eval",
+          "container_group_version": "2",
+          "instance_id": "dbb2dbfd-4cfe-4c95-839a-a9e418761403",
+          "machine_id": "5ecebf1d-57a9-ca5f-85b7-625d45884163",
+          "organization_id": "ecb54e6a-c530-4210-b396-b2a55e19ccc3",
+          "organization_name": "cosmosgeeketh",
+          "project_name": "default"
+        },
+        "type": "container"
+      },
+      "severity": "default",
+      "text_log": "Your current version is: 1.2.0",
+      "time": "2026-09-12T22:51:31.24829+00:00"
+    },
+    {
+      "receive_time": "2026-09-12T22:51:32.1644715+00:00",
+      "resource": {
+        "labels": {
+          "container_group_name": "repocket-eval",
+          "container_group_version": "2",
+          "instance_id": "dbb2dbfd-4cfe-4c95-839a-a9e418761403",
+          "machine_id": "5ecebf1d-57a9-ca5f-85b7-625d45884163",
+          "organization_id": "ecb54e6a-c530-4210-b396-b2a55e19ccc3",
+          "organization_name": "cosmosgeeketh",
+          "project_name": "default"
+        },
+        "type": "container"
+      },
+      "severity": "default",
+      "text_log": "sdk initialized: SdkEnvironment { debug: false, app_info: HarnessAppInfo { id: \"8c3c8876-90cd-4ba0-8d04-75538e4d2c48\", user_id: \"[REDACTED]\", version: \"1.2.0\", build_number: \"0\" }, interop_info: HarnessInteropInfo { type: \"none\", version: \"0.0.0\" }, device_info: HarnessDeviceInfo { os_code: \"linux\", os_name: \"Debian\", os_version: \"12.0.0\", name: \"dbb2dbfd-4cfe-4c95-839a-a9e418761403\", model: \"x86_64\", cpus: 16 }, core_info: SdkCoreInfo { type: \"x86_64-unknown-linux-gnu\", version: \"2.0.1\" } }",
+      "time": "2026-09-12T22:51:31.251501+00:00"
+    },
+    {
+      "receive_time": "2026-09-12T22:51:32.1644715+00:00",
+      "resource": {
+        "labels": {
+          "container_group_name": "repocket-eval",
+          "container_group_version": "2",
+          "instance_id": "dbb2dbfd-4cfe-4c95-839a-a9e418761403",
+          "machine_id": "5ecebf1d-57a9-ca5f-85b7-625d45884163",
+          "organization_id": "ecb54e6a-c530-4210-b396-b2a55e19ccc3",
+          "organization_name": "cosmosgeeketh",
+          "project_name": "default"
+        },
+        "type": "container"
+      },
+      "severity": "default",
+      "text_log": "peer registering; state=3; device_id=; reconnect_at_unix=0",
+      "time": "2026-09-12T22:51:31.251881+00:00"
+    },
+    {
+      "receive_time": "2026-09-12T22:51:32.1644715+00:00",
+      "resource": {
+        "labels": {
+          "container_group_name": "repocket-eval",
+          "container_group_version": "2",
+          "instance_id": "dbb2dbfd-4cfe-4c95-839a-a9e418761403",
+          "machine_id": "5ecebf1d-57a9-ca5f-85b7-625d45884163",
+          "organization_id": "ecb54e6a-c530-4210-b396-b2a55e19ccc3",
+          "organization_name": "cosmosgeeketh",
+          "project_name": "default"
+        },
+        "type": "container"
+      },
+      "severity": "default",
+      "text_log": "starting sdk lifecycle",
+      "time": "2026-09-12T22:51:31.25195+00:00"
+    },
+    {
+      "json_log": {
+        "gpu_class_name": "",
+        "message": "Instance Running"
+      },
+      "receive_time": "2026-09-12T22:51:31.483539+00:00",
+      "resource": {
+        "labels": {
+          "container_group_name": "repocket-eval",
+          "container_group_version": "2",
+          "instance_id": "dbb2dbfd-4cfe-4c95-839a-a9e418761403",
+          "machine_id": "5ecebf1d-57a9-ca5f-85b7-625d45884163",
+          "organization_id": "ecb54e6a-c530-4210-b396-b2a55e19ccc3",
+          "organization_name": "cosmosgeeketh",
+          "project_name": "default"
+        },
+        "type": "instance_controller"
+      },
+      "severity": "info",
+      "time": "2026-09-12T22:51:31.435303+00:00"
+    },
+    {
+      "json_log": {
+        "message": "Instance Ready (Readiness Probe Passed)",
+        "gpu_class_name": ""
+      },
+      "receive_time": "2026-09-12T22:51:31.487722+00:00",
+      "resource": {
+        "labels": {
+          "container_group_name": "repocket-eval",
+          "container_group_version": "2",
+          "instance_id": "dbb2dbfd-4cfe-4c95-839a-a9e418761403",
+          "machine_id": "5ecebf1d-57a9-ca5f-85b7-625d45884163",
+          "organization_id": "ecb54e6a-c530-4210-b396-b2a55e19ccc3",
+          "organization_name": "cosmosgeeketh",
+          "project_name": "default"
+        },
+        "type": "instance_controller"
+      },
+      "severity": "info",
+      "time": "2026-09-12T22:51:31.4675371+00:00"
+    },
+    {
+      "json_log": {
+        "gpu_class_name": "",
+        "message": "Instance Startup Probe Passed"
+      },
+      "receive_time": "2026-09-12T22:51:32.252313+00:00",
+      "resource": {
+        "labels": {
+          "container_group_name": "repocket-eval",
+          "container_group_version": "2",
+          "instance_id": "dbb2dbfd-4cfe-4c95-839a-a9e418761403",
+          "machine_id": "5ecebf1d-57a9-ca5f-85b7-625d45884163",
+          "organization_id": "ecb54e6a-c530-4210-b396-b2a55e19ccc3",
+          "organization_name": "cosmosgeeketh",
+          "project_name": "default"
+        },
+        "type": "instance_controller"
+      },
+      "severity": "info",
+      "time": "2026-09-12T22:51:31.4759458+00:00"
+    },
+    {
+      "receive_time": "2026-09-12T22:51:32.1644715+00:00",
+      "resource": {
+        "labels": {
+          "container_group_name": "repocket-eval",
+          "container_group_version": "2",
+          "instance_id": "dbb2dbfd-4cfe-4c95-839a-a9e418761403",
+          "machine_id": "5ecebf1d-57a9-ca5f-85b7-625d45884163",
+          "organization_id": "ecb54e6a-c530-4210-b396-b2a55e19ccc3",
+          "organization_name": "cosmosgeeketh",
+          "project_name": "default"
+        },
+        "type": "container"
+      },
+      "severity": "default",
+      "text_log": "peer resetting; state=4; device_id=6aa5d7726fca3b0011e1b08d; reconnect_at_unix=0",
+      "time": "2026-09-12T22:51:31.759238+00:00"
+    },
+    {
+      "receive_time": "2026-09-12T22:51:32.1644715+00:00",
+      "resource": {
+        "labels": {
+          "container_group_name": "repocket-eval",
+          "container_group_version": "2",
+          "instance_id": "dbb2dbfd-4cfe-4c95-839a-a9e418761403",
+          "machine_id": "5ecebf1d-57a9-ca5f-85b7-625d45884163",
+          "organization_id": "ecb54e6a-c530-4210-b396-b2a55e19ccc3",
+          "organization_name": "cosmosgeeketh",
+          "project_name": "default"
+        },
+        "type": "container"
+      },
+      "severity": "default",
+      "text_log": "peer connected; state=5; device_id=6aa5d7726fca3b0011e1b08d; reconnect_at_unix=0",
+      "time": "2026-09-12T22:51:31.781846+00:00"
+    },
+    {
+      "json_log": {
+        "gpu_class_name": "",
+        "message": "Instance Interrupted (Priority)"
+      },
+      "receive_time": "2026-09-12T23:01:41.5686331+00:00",
+      "resource": {
+        "labels": {
+          "container_group_name": "repocket-eval",
+          "container_group_version": "2",
+          "instance_id": "dbb2dbfd-4cfe-4c95-839a-a9e418761403",
+          "machine_id": "5ecebf1d-57a9-ca5f-85b7-625d45884163",
+          "organization_id": "ecb54e6a-c530-4210-b396-b2a55e19ccc3",
+          "organization_name": "cosmosgeeketh",
+          "project_name": "default"
+        },
+        "type": "instance_controller"
+      },
+      "severity": "info",
+      "time": "2026-09-12T23:01:39.107421+00:00"
+    },
+    {
+      "json_log": {
+        "gpu_class_name": "",
+        "message": "Instance Allocated"
+      },
+      "receive_time": "2026-09-12T23:01:44.3008187+00:00",
+      "resource": {
+        "labels": {
+          "container_group_name": "repocket-eval",
+          "container_group_version": "2",
+          "instance_id": "34a9f091-e20b-4709-8a04-783e54f88e85",
+          "machine_id": "e0a842f1-aad1-aa55-9870-4a4686145aa9",
+          "organization_id": "ecb54e6a-c530-4210-b396-b2a55e19ccc3",
+          "organization_name": "cosmosgeeketh",
+          "project_name": "default"
+        },
+        "type": "instance_controller"
+      },
+      "severity": "info",
+      "time": "2026-09-12T23:01:43.9216504+00:00"
+    },
+    {
+      "json_log": {
+        "gpu_class_name": "",
+        "message": "Instance Allocated"
+      },
+      "receive_time": "2026-09-12T23:02:54.7016437+00:00",
+      "resource": {
+        "labels": {
+          "container_group_name": "repocket-eval",
+          "container_group_version": "2",
+          "instance_id": "bf114b87-c2f9-4dff-a361-95f4a54adaac",
+          "machine_id": "7be39e95-394b-c251-a6eb-f8570d41e62e",
+          "organization_id": "ecb54e6a-c530-4210-b396-b2a55e19ccc3",
+          "organization_name": "cosmosgeeketh",
+          "project_name": "default"
+        },
+        "type": "instance_controller"
+      },
+      "severity": "info",
+      "time": "2026-09-12T23:02:54.3634604+00:00"
+    },
+    {
+      "json_log": {
+        "message": "Instance Downloading",
+        "gpu_class_name": ""
+      },
+      "receive_time": "2026-09-12T23:03:28.762579+00:00",
+      "resource": {
+        "labels": {
+          "container_group_name": "repocket-eval",
+          "container_group_version": "2",
+          "instance_id": "bf114b87-c2f9-4dff-a361-95f4a54adaac",
+          "machine_id": "7be39e95-394b-c251-a6eb-f8570d41e62e",
+          "organization_id": "ecb54e6a-c530-4210-b396-b2a55e19ccc3",
+          "organization_name": "cosmosgeeketh",
+          "project_name": "default"
+        },
+        "type": "instance_controller"
+      },
+      "severity": "info",
+      "time": "2026-09-12T23:03:28.5780885+00:00"
+    },
+    {
+      "json_log": {
+        "message": "Instance Starting",
+        "gpu_class_name": ""
+      },
+      "receive_time": "2026-09-12T23:03:40.8481207+00:00",
+      "resource": {
+        "labels": {
+          "container_group_name": "repocket-eval",
+          "container_group_version": "2",
+          "instance_id": "bf114b87-c2f9-4dff-a361-95f4a54adaac",
+          "machine_id": "7be39e95-394b-c251-a6eb-f8570d41e62e",
+          "organization_id": "ecb54e6a-c530-4210-b396-b2a55e19ccc3",
+          "organization_name": "cosmosgeeketh",
+          "project_name": "default"
+        },
+        "type": "instance_controller"
+      },
+      "severity": "info",
+      "time": "2026-09-12T23:03:39.3213968+00:00"
+    },
+    {
+      "receive_time": "2026-09-12T23:03:43.8666008+00:00",
+      "resource": {
+        "labels": {
+          "container_group_name": "repocket-eval",
+          "container_group_version": "2",
+          "instance_id": "bf114b87-c2f9-4dff-a361-95f4a54adaac",
+          "machine_id": "7be39e95-394b-c251-a6eb-f8570d41e62e",
+          "organization_id": "ecb54e6a-c530-4210-b396-b2a55e19ccc3",
+          "organization_name": "cosmosgeeketh",
+          "project_name": "default"
+        },
+        "type": "container"
+      },
+      "severity": "default",
+      "text_log": "Your current version is: 1.2.0",
+      "time": "2026-09-12T23:03:40.303941+00:00"
+    },
+    {
+      "receive_time": "2026-09-12T23:03:43.8666008+00:00",
+      "resource": {
+        "labels": {
+          "container_group_name": "repocket-eval",
+          "container_group_version": "2",
+          "instance_id": "bf114b87-c2f9-4dff-a361-95f4a54adaac",
+          "machine_id": "7be39e95-394b-c251-a6eb-f8570d41e62e",
+          "organization_id": "ecb54e6a-c530-4210-b396-b2a55e19ccc3",
+          "organization_name": "cosmosgeeketh",
+          "project_name": "default"
+        },
+        "type": "container"
+      },
+      "severity": "default",
+      "text_log": "sdk initialized: SdkEnvironment { debug: false, app_info: HarnessAppInfo { id: \"8c3c8876-90cd-4ba0-8d04-75538e4d2c48\", user_id: \"[REDACTED]\", version: \"1.2.0\", build_number: \"0\" }, interop_info: HarnessInteropInfo { type: \"none\", version: \"0.0.0\" }, device_info: HarnessDeviceInfo { os_code: \"linux\", os_name: \"Debian\", os_version: \"12.0.0\", name: \"bf114b87-c2f9-4dff-a361-95f4a54adaac\", model: \"x86_64\", cpus: 6 }, core_info: SdkCoreInfo { type: \"x86_64-unknown-linux-gnu\", version: \"2.0.1\" } }",
+      "time": "2026-09-12T23:03:40.307947+00:00"
+    },
+    {
+      "receive_time": "2026-09-12T23:03:43.8666008+00:00",
+      "resource": {
+        "labels": {
+          "container_group_name": "repocket-eval",
+          "container_group_version": "2",
+          "instance_id": "bf114b87-c2f9-4dff-a361-95f4a54adaac",
+          "machine_id": "7be39e95-394b-c251-a6eb-f8570d41e62e",
+          "organization_id": "ecb54e6a-c530-4210-b396-b2a55e19ccc3",
+          "organization_name": "cosmosgeeketh",
+          "project_name": "default"
+        },
+        "type": "container"
+      },
+      "severity": "default",
+      "text_log": "peer registering; state=3; device_id=; reconnect_at_unix=0",
+      "time": "2026-09-12T23:03:40.308014+00:00"
+    },
+    {
+      "receive_time": "2026-09-12T23:03:43.8666008+00:00",
+      "resource": {
+        "labels": {
+          "container_group_name": "repocket-eval",
+          "container_group_version": "2",
+          "instance_id": "bf114b87-c2f9-4dff-a361-95f4a54adaac",
+          "machine_id": "7be39e95-394b-c251-a6eb-f8570d41e62e",
+          "organization_id": "ecb54e6a-c530-4210-b396-b2a55e19ccc3",
+          "organization_name": "cosmosgeeketh",
+          "project_name": "default"
+        },
+        "type": "container"
+      },
+      "severity": "default",
+      "text_log": "starting sdk lifecycle",
+      "time": "2026-09-12T23:03:40.308091+00:00"
+    },
+    {
+      "receive_time": "2026-09-12T23:03:45.3799035+00:00",
+      "resource": {
+        "labels": {
+          "container_group_name": "repocket-eval",
+          "container_group_version": "2",
+          "instance_id": "bf114b87-c2f9-4dff-a361-95f4a54adaac",
+          "machine_id": "7be39e95-394b-c251-a6eb-f8570d41e62e",
+          "organization_id": "ecb54e6a-c530-4210-b396-b2a55e19ccc3",
+          "organization_name": "cosmosgeeketh",
+          "project_name": "default"
+        },
+        "type": "container"
+      },
+      "severity": "default",
+      "text_log": "peer resetting; state=4; device_id=6aa5da4eff14510011ce145e; reconnect_at_unix=0",
+      "time": "2026-09-12T23:03:41.161826+00:00"
+    },
+    {
+      "receive_time": "2026-09-12T23:03:45.3799035+00:00",
+      "resource": {
+        "labels": {
+          "container_group_name": "repocket-eval",
+          "container_group_version": "2",
+          "instance_id": "bf114b87-c2f9-4dff-a361-95f4a54adaac",
+          "machine_id": "7be39e95-394b-c251-a6eb-f8570d41e62e",
+          "organization_id": "ecb54e6a-c530-4210-b396-b2a55e19ccc3",
+          "organization_name": "cosmosgeeketh",
+          "project_name": "default"
+        },
+        "type": "container"
+      },
+      "severity": "default",
+      "text_log": "peer connected; state=5; device_id=6aa5da4eff14510011ce145e; reconnect_at_unix=0",
+      "time": "2026-09-12T23:03:41.537853+00:00"
+    },
+    {
+      "json_log": {
+        "gpu_class_name": "",
+        "message": "Instance Running"
+      },
+      "receive_time": "2026-09-12T23:03:42.6830707+00:00",
+      "resource": {
+        "labels": {
+          "container_group_name": "repocket-eval",
+          "container_group_version": "2",
+          "instance_id": "bf114b87-c2f9-4dff-a361-95f4a54adaac",
+          "machine_id": "7be39e95-394b-c251-a6eb-f8570d41e62e",
+          "organization_id": "ecb54e6a-c530-4210-b396-b2a55e19ccc3",
+          "organization_name": "cosmosgeeketh",
+          "project_name": "default"
+        },
+        "type": "instance_controller"
+      },
+      "severity": "info",
+      "time": "2026-09-12T23:03:42.5298276+00:00"
+    },
+    {
+      "json_log": {
+        "gpu_class_name": "",
+        "message": "Instance Ready (Readiness Probe Passed)"
+      },
+      "receive_time": "2026-09-12T23:03:42.6877445+00:00",
+      "resource": {
+        "labels": {
+          "container_group_name": "repocket-eval",
+          "container_group_version": "2",
+          "instance_id": "bf114b87-c2f9-4dff-a361-95f4a54adaac",
+          "machine_id": "7be39e95-394b-c251-a6eb-f8570d41e62e",
+          "organization_id": "ecb54e6a-c530-4210-b396-b2a55e19ccc3",
+          "organization_name": "cosmosgeeketh",
+          "project_name": "default"
+        },
+        "type": "instance_controller"
+      },
+      "severity": "info",
+      "time": "2026-09-12T23:03:42.5344573+00:00"
+    },
+    {
+      "json_log": {
+        "gpu_class_name": "",
+        "message": "Instance Startup Probe Passed"
+      },
+      "receive_time": "2026-09-12T23:03:42.6925773+00:00",
+      "resource": {
+        "labels": {
+          "container_group_name": "repocket-eval",
+          "container_group_version": "2",
+          "instance_id": "bf114b87-c2f9-4dff-a361-95f4a54adaac",
+          "machine_id": "7be39e95-394b-c251-a6eb-f8570d41e62e",
+          "organization_id": "ecb54e6a-c530-4210-b396-b2a55e19ccc3",
+          "organization_name": "cosmosgeeketh",
+          "project_name": "default"
+        },
+        "type": "instance_controller"
+      },
+      "severity": "info",
+      "time": "2026-09-12T23:03:42.5397008+00:00"
+    }
+  ],
+  "page_max_time": "2026-09-12T23:03:42.6925773+00:00",
+  "page_min_time": "2026-09-12T22:30:23.1247464+00:00"
+}

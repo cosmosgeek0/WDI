@@ -60,8 +60,8 @@ class Publisher:
         for r in runs:
             r['current'],r['cloud_state']=evidence.current(r,now,sources)
             r['cloud_membership']=r['current']
-            r['shared_counter']=len(bundle_apps[r['allocation_id']])>1
-            r['measurement_scope']='container_interface'
+            r['measurement_scope']=r['native'].get('measurement_scope','container_interface')
+            r['shared_counter']=r['measurement_scope']!='application' and len(bundle_apps[r['allocation_id']])>1
             later=allocations[(r['service'],r.get('group_id') or r.get('group'),r['instance'])]
             if r['native'].get('final') or any(x['first_seen_ms']>=r['last_seen_ms'] and x['run']!=r['run'] for x in later):r['current']=False
             if r['current'] is True and r['cloud_state']!='running':r['current']=False
@@ -109,7 +109,7 @@ class Publisher:
                 at=number(worker.get('sample_ms'))
                 rate_expires=number(worker.get('rate_expires_ms'));rate_received=number(worker.get('rate_received_ms'))
                 if at is not None and rate_expires is not None and at<=now<=rate_expires and worker.get('salad_state')=='running':rate=number(worker.get('mb_per_minute'))
-            return dict(current=known,current_expires_ms=expires,current_rate=rate,rate_source_ms=at,rate_received_ms=rate_received,rate_expires_ms=rate_expires,performance_expires_ms=chosen['performance_expires_ms'],ranking=ranking,metrics=chosen['metrics'],watch_evidence=chosen['watch_evidence'],evaluation_window=dict(start_ms=chosen['metrics'].get('window_start_ms'),end_ms=chosen['metrics'].get('window_end_ms'),service=chosen['service'],episode=chosen['id']))
+            return dict(measurement_scope=chosen['measurement_scope'],current=known,current_expires_ms=expires,current_rate=rate,rate_source_ms=at,rate_received_ms=rate_received,rate_expires_ms=rate_expires,performance_expires_ms=chosen['performance_expires_ms'],ranking=ranking,metrics=chosen['metrics'],watch_evidence=chosen['watch_evidence'],evaluation_window=dict(start_ms=chosen['metrics'].get('window_start_ms'),end_ms=chosen['metrics'].get('window_end_ms'),service=chosen['service'],episode=chosen['id']))
         payloads=[];app_rows=[];flagged_count=ranked_count=0
         for row in value['ips']:
             row['id']='ip:'+row['ip']
@@ -459,4 +459,4 @@ class PublishedEvidence:
                 amount=None if overlap else sum(p['mb'] for p in parts)
                 minutes.append(dict(minute_ms=at,mb=amount,count=1,partial=overlap or covered<60000,estimated=any(p['estimated'] for p in parts),coverage_complete=not overlap and covered>=60000))
             selected=[p['mb'] for p in minutes if first<=p['minute_ms']<=last and p['mb'] is not None]
-            return dict(allocation_id=allocation,service=service,ip=ip,test=dict(id='allocation',label='Current container' if live else 'Historical container'),minutes=minutes,start_ms=first,end_ms=last+60000,source_ms=latest,total_mb=sum(selected) if selected else None,anchored=not live,measurement_scope='container_interface',shared_counter=row.get('shared_counter'),basis='Container-visible interface traffic from one selected app reporter. Overlapping run intervals are excluded; this is not isolated per-app or provider-credited traffic.')
+            return dict(allocation_id=allocation,service=service,ip=ip,test=dict(id='allocation',label='Current container' if live else 'Historical container'),minutes=minutes,start_ms=first,end_ms=last+60000,source_ms=latest,total_mb=sum(selected) if selected else None,anchored=not live,measurement_scope=app.get('measurement_scope','container_interface'),shared_counter=app.get('measurement_scope')!='application' and row.get('shared_counter'),basis=('Application-attributed RX + TX.' if app.get('measurement_scope')=='application' else 'Container-visible interface traffic from one selected app reporter; this is not isolated per-app traffic.')+' Overlapping run intervals are excluded. Provider credits remain separate.')

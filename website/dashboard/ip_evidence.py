@@ -129,7 +129,7 @@ def cause(state, reason):
 def observed_state(sample, service):
     health = sample.get('health') or {}
     health = health if isinstance(health, dict) else {}
-    state = health.get('state') or sample.get('state') or sample.get('client_status')
+    state = health.get('state') or sample.get('state') or sample.get('client_status') or (sample.get('phase') if service == 'rp' else None)
     reason = health.get('error') or sample.get('error') or sample.get('reason')
     if reason in ('none', 'None', ''):
         reason = None
@@ -137,7 +137,8 @@ def observed_state(sample, service):
     result = dict(state=safe_text(state), reason=safe_text(reason), observed_ms=number(at),
                   received_ms=number(sample.get('recorded_ms') or sample.get('received_ms') or sample.get('log_time_ms')),
                   category=cause(state,reason), final=sample.get('final') in (True,1),
-                  device=safe_text(sample.get('uuid') or health.get('device_id') or sample.get('device')))
+                  measurement_scope='application' if service in ('grass','rp') and sample.get('traffic_scope') == 'application' and sample.get('application') == {'grass':'grass','rp':'repocket'}.get(service) else 'container_interface',
+                  device=safe_text(sample.get('uuid') or health.get('device_id') or sample.get('device_id') or sample.get('device')))
     provider = health.get('provider_listing') or {}
     if isinstance(provider,dict):
         result['provider'] = {k:provider.get(k) for k in ('observed_ms','confirmed','connected','ip_match') if type(provider.get(k)) in (int,float,bool)}

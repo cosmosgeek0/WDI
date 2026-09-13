@@ -3,7 +3,7 @@ import copy
 import json
 import sqlite3
 from contextlib import closing
-from dashboard.ip_allocations import allocation_id,current_allocations
+from dashboard.ip_allocations import allocation_id,current_allocations,traffic_scope
 from dashboard.ip_evidence import connection,observed_state,number
 from dashboard.ip_reputation import score_ips
 from dashboard.ip_shadow import prepare
@@ -94,7 +94,7 @@ def refresh(db,root,evidence,now,status):
             if p:profiles[ip]=json.loads(p[0])
     def state(selected):
         run=max(selected,key=lambda r:r['last_seen_ms'])
-        return dict(current=True,current_expires_ms=now+90000,current_rate=None,
+        return dict(measurement_scope=run.get('measurement_scope','container_interface'),current=True,current_expires_ms=now+90000,current_rate=None,
             performance_expires_ms=run.get('performance_expires_ms'),ranking=run['ranking'],metrics=run.get('metrics',{}),
             watch_evidence=run.get('watch_evidence'),evaluation_window=dict(episode=run['id'],service=run['service'],start_ms=run.get('metrics',{}).get('window_start_ms'),end_ms=run.get('metrics',{}).get('window_end_ms')))
     rows=current_allocations(runs,{},profiles,state,now,workers=inventory)
@@ -110,9 +110,9 @@ def refresh(db,root,evidence,now,status):
             observation_revision=source.get('generated_ms'),observation_source='grass/view.json + exact recorded native sample')
         app.update(current=True if w['inventory_verified'] else None,current_expires_ms=row['current_expires_ms'],run=w.get('run'),
                    native=copy.deepcopy(w.get('native_snapshot') or {'category':'missing recording','binding_verified':False}))
+        app['measurement_scope']=app['native'].get('measurement_scope','unavailable')
         row.update(current_expires_ms=max([row['current_expires_ms'],*peer_deadlines]),
-            shared_counter=len(row['apps'])>1,ips=sorted({a['ip'] for a in row['apps'] if a.get('ip')}))
-        if row['shared_counter']:row['traffic_scope_note']='One container-interface RX+TX stream reported by Grass; overlapping app reporters are not summed. Isolated app traffic is unavailable.'
+            ips=sorted({a['ip'] for a in row['apps'] if a.get('ip')}),**traffic_scope(row['apps'],app))
         app.update(rate_source_ms=w.get('sample_ms'),rate_received_ms=w.get('rate_received_ms'),rate_expires_ms=w.get('rate_expires_ms'),current_rate=None)
         at=number(app['rate_source_ms']);receipt=number(app['rate_received_ms']);deadline=number(app['rate_expires_ms']);rate=number(w.get('mb_per_minute'))
         old_app=next((a for a in (old or {}).get('apps',[]) if a['service']=='grass'),{})

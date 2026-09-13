@@ -1,0 +1,10 @@
+*
+!Dockerfile
+!supervisor.py
+!session.py
+!worker.pl
+!worker.sha256
+!ip_policy.py
+!traffic.py
+!strace
+!LICENSE.strace

@@ -10,7 +10,7 @@ Environment=HOME=/home/salad
 Environment=PYTHONPATH=/opt/wdi/website
 Environment=RP_ORGANIZATION=cosmosgeeketh
 Environment=RP_PROJECT=default
-Environment=RP_GROUP=repocket-eval
+Environment=RP_GROUP=wdi-grass-continuity
 ExecStart=/usr/bin/python3 -B collectors/repocket.py
 Restart=on-failure
 RestartSec=30

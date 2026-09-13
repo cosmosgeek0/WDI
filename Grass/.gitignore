@@ -1,0 +1,5 @@
+# Local release artifacts and private encrypted recovery snapshots.
+images/
+state/
+__pycache__/
+.DS_Store

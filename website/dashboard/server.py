@@ -271,7 +271,7 @@ def grass_registration_fields(value, now):
 
 def grass_supervisor_fields(value, now):
     value = value if isinstance(value,dict) else {}
-    output = {k:value.get(k) for k in ('target_replicas','observed_ms','status','mode','requests_24h')}
+    output = {k:value.get(k) for k in ('scope','target_replicas','observed_ms','status','mode','requests_24h')}
     policy = value.get('policy') or {}
     output['policy'] = {k:policy.get(k) for k in ('bad_duration_ms','fleet_cooldown_ms','max_actions_hour','max_actions_day')}
     at = output['observed_ms']

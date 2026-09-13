@@ -113,16 +113,25 @@ def integer(value, name):
 
 def parse_record(entry, received_ms):
     text = entry.get('text_log', '')
-    if not text.startswith(('GRASS_SAMPLE_V1 ', 'GRASS_SAMPLE_V2 ', 'GRASS_EVENT_V2 ')):
+    if not text.startswith(('GRASS_SAMPLE_V1 ', 'GRASS_SAMPLE_V2 ', 'GRASS_EVENT_V2 ', 'GRASS_PRIVATE_EVENT_V1 ')):
         return None
     row = json.loads(text.split(' ', 1)[1])
+    runtime_event = text.startswith('GRASS_PRIVATE_EVENT_V1 ')
+    if runtime_event:
+        if row.get('event') not in ('ip_classified','reallocation_requested','reallocation_result','reallocation_not_sent'):
+            return None
+        row.update(revision=2,kind='grass_event',run=None,source_format='GRASS_PRIVATE_EVENT_V1')
+        policy = row.get('policy') if isinstance(row.get('policy'),dict) else {}
+        row['ip'] = row.get('ip') or policy.get('ip')
+        row['reason'] = row.get('reason') or policy.get('reason') or policy.get('error')
+        if row['event'].startswith('reallocation_'):row['action']='reallocate'
     revision, kind = row.get('revision'), row.get('kind')
     if revision not in (1, 2) or kind not in ('grass_sample', 'grass_event'):
         return None
     for name in ('instance', 'machine'):
         if str(uuid.UUID(row[name])) != row[name]:
             raise ValueError('Invalid native identity')
-    if not isinstance(row.get('run'), str) or not row['run'].startswith(row['instance'] + ':' + row['machine'] + ':'):
+    if not runtime_event and (not isinstance(row.get('run'), str) or not row['run'].startswith(row['instance'] + ':' + row['machine'] + ':')):
         raise ValueError('Invalid native run')
     row['source_ms'] = integer(row['source_ms'], 'source time')
     if row['source_ms'] > received_ms + 10_000:
@@ -130,8 +139,9 @@ def parse_record(entry, received_ms):
     if revision == 2 and str(uuid.UUID(row['group_id'])) != row['group_id']:
         raise ValueError('Invalid native group')
     if kind == 'grass_sample':
-        for name in ('rx', 'tx', 'monotonic_ms'):
-            row[name] = integer(row[name], name)
+        row['monotonic_ms'] = integer(row['monotonic_ms'], 'monotonic_ms')
+        for name in ('rx','tx'):
+            row[name] = integer(row[name], name) if row.get(name) is not None else None
         if row.get('ip') is not None:
             row['ip'] = str(ipaddress.ip_address(row['ip']))
         if row.get('country') is not None and not re.fullmatch('[A-Z]{2}', row['country']):
@@ -146,7 +156,7 @@ def parse_record(entry, received_ms):
                 raise ValueError('Invalid provider account identity')
             if health.get('pid') is not None:
                 integer(health['pid'], 'client process')
-            if health['state'] == 'connected' and (not health.get('pid') or not health.get('device_id') or not row.get('ip')):
+            if health['state'] == 'connected' and (not health.get('pid') or not health.get('device_id') or not row.get('ip') and row.get('valid') is not False):
                 raise ValueError('Connected status lacks native identity')
             if type(row.get('final')) is not bool:
                 raise ValueError('Invalid final-sample flag')
@@ -176,7 +186,7 @@ def collect(key, start, end, *, max_calls=64, budget_seconds=None, initial_slice
         query = 'resource.type = "container" and resource.labels.project_name = "' + (target['project'] if target else PROJECT) + '" and resource.labels.container_group_name = "' + (target['group_name'] if target else GROUP) + '"'
         if machine:
             query += ' and resource.labels.machine_id = ' + json.dumps(str(uuid.UUID(machine)))
-        query += ' and (text_log startswith "GRASS_SAMPLE_V" or text_log startswith "GRASS_EVENT_V2 ")'
+        query += ' and (text_log startswith "GRASS_SAMPLE_V" or text_log startswith "GRASS_EVENT_V2 " or text_log startswith "GRASS_PRIVATE_EVENT_V1 ")'
         for attempt in range(2 if retry_timeouts else 1):
             calls += 1
             if calls > max_calls:
@@ -334,14 +344,17 @@ def update_interval(db, run, source_ms):
     current, previous = json.loads(current[0]), json.loads(previous[0])
     elapsed = current['source_ms'] - previous['source_ms']
     monotonic = current['monotonic_ms'] - previous['monotonic_ms']
-    rx, tx = current['rx'] - previous['rx'], current['tx'] - previous['tx']
+    rx = current['rx'] - previous['rx'] if current['rx'] is not None and previous['rx'] is not None else None
+    tx = current['tx'] - previous['tx'] if current['tx'] is not None and previous['tx'] is not None else None
     required = db.execute('SELECT scope FROM measurement_groups WHERE group_id=?', (current.get('group_id'),)).fetchone()
-    app_counter = lambda row: (row.get('traffic_scope') == 'application' and row.get('application') == 'grass' and isinstance(row.get('counter_id'),str) and bool(row['counter_id']))
+    app_counter = lambda row: (row.get('traffic_scope') == 'application' and row.get('application') == 'grass' and row.get('valid',True) is True and isinstance(row.get('counter_id'),str) and bool(row['counter_id']))
     reason = None
     if required and (not app_counter(current) or not app_counter(previous)):
         reason = 'application traffic unavailable; shared container counters excluded'
     elif required and current['counter_id'] != previous['counter_id']:
         reason = 'application counter boundary'
+    elif rx is None or tx is None:
+        reason = 'application counter unavailable'
     elif elapsed <= 0 or monotonic <= 0 or abs(elapsed - monotonic) > 5000:
         reason = 'clock boundary'
     elif current.get('group_id') != previous.get('group_id') or current['instance'] != previous['instance'] or current['machine'] != previous['machine']:
@@ -426,7 +439,7 @@ def open_database(path):
 def ingest(db, records, group_id):
     inserted = 0
     with db:
-        for row in sorted(records, key=lambda r: (r['source_ms'], r['run'])):
+        for row in sorted(records, key=lambda r: (r['source_ms'], r['run'] or '')):
             if row.get('revision') == 2 and row.get('group_id') != group_id:
                 continue
             if row['kind'] == 'grass_event':
@@ -501,6 +514,8 @@ def view(db, inventory, inventory_ms, desired, error=None, history_note=None, no
             elif health['state'] == 'offline' and health.get('failure_source') == 'native_disconnect':
                 state = 'Reconnecting'
             working = None if health['state'] == 'unknown' else health['state'] == 'connected' and not problem
+            if health['state'] == 'connected' and not sample.get('ip'):
+                working, state = None, 'Connected; current IP unavailable'
             if health.get('quality') is not None:
                 note = f"Provider network quality: {health['quality']:g}%"
             if problem and health.get('next_check_ms', 0) > now:
@@ -636,7 +651,7 @@ def view(db, inventory, inventory_ms, desired, error=None, history_note=None, no
         'working': sum(w['working'] is True for w in workers) if inventory_fresh and not unknown else None,
         'started_ms': min(starts) if starts else None, 'total_mb': sum(row[0] for row in totals.values())/1e6 if known else None,
         'credited_text': credited, 'earned_text': None, 'error': error, 'workers': workers, 'minutes': history,
-        'credit_note': ('Current Grass traffic requires counters attributed to the Grass application; shared container counters are retained as raw observations and excluded. Archived groups retain their original container measurements. '
+        'credit_note': ('Current Grass measurements are process-family socket-I/O payload bytes, including application protocol traffic. They exclude shared container counters and are not provider-credited bandwidth. Archived groups retain their original container measurements. '
             'Minute allocation is estimated when intervals cross boundaries. Long gaps contribute measured endpoint totals without invented minute bars. '
             + provider_note + recovery_note + (' History recovery: ' + history_note if history_note else ''))}
 
@@ -870,40 +885,21 @@ def poll_source(key, target, previous, registration_owner=True):
         return source, []
 
 
-def grass_supervisor(root, sources, now):
-    """A protected, explicitly whitelisted operational summary, no raw watcher data."""
-    output = {'target_replicas':None, 'observed_ms':None, 'fresh':False, 'status':'Supervisor observation unavailable'}
-    try:
-        settings = json.loads((ROOT.parent/'config/grass-dashboard.json').read_text())
-        if {s.get('group_id') for s in sources} == {settings.get('group_id')} and type(settings.get('target_replicas')) is int:
-            output['target_replicas'] = settings['target_replicas']
-        watch = json.loads((root/'grass/fleet-watch/latest.json').read_text())
-        output['observed_ms'] = watch.get('observed_ms')
-        at = output['observed_ms']
-        output['fresh'] = isinstance(at,(int,float)) and 0 <= now-at <= 150000 and not watch.get('error')
-        statuses = {'no_persistent_eligible_failure':'No persistent failure eligible for replacement',
-            'account_error_blocks_fleet_replacement':'Account error blocks replacement',
-            'previous_replacement_not_confirmed':'Waiting for the previous replacement to be confirmed',
-            'daily_replacement_budget_exhausted':'Daily replacement limit reached',
-            'hourly_replacement_budget_exhausted':'Hourly replacement limit reached',
-            'replacement_cooldown':'Waiting for replacement cooldown',
-            'new_account_login_not_verified':'Account login is not verified',
-            'accepted':'Replacement request accepted; health confirmation pending',
-            'confirmed':'Replacement health confirmed', 'failed':'Replacement request failed',
-            'uncertain':'Replacement request outcome is uncertain'}
-        output['status'] = statuses.get(watch.get('decision_status'),'Supervisor status requires inspection')
-        output['mode'] = 'Active' if watch.get('mode') == 'bounded_canary_actions' else 'Observe only'
-        policy = watch.get('policy') or {}
-        output['policy'] = {k:policy.get(k) for k in ('bad_duration_ms','fleet_cooldown_ms','max_actions_hour','max_actions_day')}
-        actions = watch.get('actions') or []
-        output['requests_24h'] = sum(isinstance(a.get('requested_ms'),(int,float)) and 0 <= now-a['requested_ms'] < 86400000 for a in actions)
-        if watch.get('error'): output['status'] = 'Supervisor source unavailable'
-        error_path = root/'grass/fleet-watch/status-error.json'
-        if error_path.exists() and json.loads(error_path.read_text()).get('observed_ms',0) >= (at or 0):
-            output.update(fresh=False,status='Supervisor observation failed')
-    except (OSError,ValueError,TypeError,KeyError):
-        pass
-    return output
+def grass_supervisor(db, sources, now):
+    """Describe the native IP owner from its original events, never old host policy."""
+    groups=[source['group_id'] for source in sources]
+    rows=db.execute("SELECT body FROM events WHERE json_extract(body,'$.source_format')='GRASS_PRIVATE_EVENT_V1' "
+        "AND json_extract(body,'$.group_id') IN ("+','.join('?' for _ in groups)+") ORDER BY source_ms DESC LIMIT 1", groups).fetchall() if groups else []
+    latest=json.loads(rows[0][0]) if rows else {};policy=latest.get('policy') or {}
+    status='Awaiting native IP classification'
+    if latest.get('event')=='ip_classified':
+        status='Datacenter IP rejected' if policy.get('is_datacenter') is True else 'IP admitted by native check' if policy.get('allowed') is True else 'IP classification unavailable; admission held'
+    elif latest.get('event')=='reallocation_result':
+        status='Salad accepted native reallocation' if policy.get('reallocation_accepted') is True else 'Native reallocation response uncertain'
+    elif latest.get('event')=='reallocation_requested':status='Native reallocation requested'
+    elif latest.get('event')=='reallocation_not_sent':status='Native reallocation was not sent'
+    return dict(scope='container_ip_policy',mode='In container',target_replicas=sum(s['replicas'] for s in sources),
+        status=status,observed_ms=latest.get('source_ms'),fresh=False)
 
 
 def publish(db, sources, history_note=None):
@@ -914,7 +910,7 @@ def publish(db, sources, history_note=None):
     inventory_ms = min((s.get('inventory_ms') or 0 for s in sources), default=0) or None
     error = '; '.join(s['organization']+'/'+s['group_name']+': '+s['error'] for s in sources if s.get('error')) or None
     output = view(db, inventory, inventory_ms, sum(s['replicas'] for s in sources), error, history_note, sources=sources)
-    output['supervisor'] = grass_supervisor(DATA.parent, sources, output['generated_ms'])
+    output['supervisor'] = grass_supervisor(db, sources, output['generated_ms'])
     save(DATA/'view.json', output)
     print(json.dumps({k: output[k] for k in ('generated_ms','running','confirmed','unverified','total_mb','error','sources')}, separators=(',', ':')), flush=True)
     return output

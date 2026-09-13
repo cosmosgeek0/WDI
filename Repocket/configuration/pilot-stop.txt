@@ -1,0 +1,17 @@
+# /run/systemd/transient/repocket-eval-stop.timer
+# This is a transient unit file, created programmatically via the systemd API. Do not edit.
+[Unit]
+Description=/usr/bin/python3 /opt/wdi/integrations/repocket/salad.py stop
+
+[Timer]
+OnActiveSec=1d
+RemainAfterElapse=no
+
+# /run/systemd/transient/repocket-eval-stop.service
+# This is a transient unit file, created programmatically via the systemd API. Do not edit.
+[Unit]
+Description=/usr/bin/python3 /opt/wdi/integrations/repocket/salad.py stop
+
+[Service]
+ExecStart=
+ExecStart="/usr/bin/python3" "/opt/wdi/integrations/repocket/salad.py" "stop"

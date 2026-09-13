@@ -1,0 +1,17 @@
+[Unit]
+Description=Restore existing Grass installations on Salad
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/wdi
+EnvironmentFile=/etc/wdi/grass.env
+ExecStart=/usr/bin/python3 /opt/wdi/grass.py --group ${GRASS_GROUP}
+Restart=on-failure
+RestartSec=30
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

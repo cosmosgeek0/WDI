@@ -26,12 +26,26 @@ def pending_app(w,now):
     service=w['service'];at=number(w.get('sample_ms'));reason=safe_text(w.get('error') or w.get('client_error') or w.get('reason'))
     state=w.get('client_status') or w.get('client_state') or w.get('state')
     state=state.get('state') if isinstance(state,dict) else state
-    return dict(service=service,name=SERVICES[service][0],ip=w.get('ip'),current=True,
+    return dict(service=service,name=SERVICES[service][0],ip=w.get('ip'),current=True,measurement_scope='unavailable',
         current_expires_ms=w['inventory_ms']+(120000 if service in ('hg','ps') else 90000),current_rate=None,rate_expires_ms=w.get('rate_expires_ms'),performance_expires_ms=None,
         native=dict(state=safe_text(state),reason=reason,observed_ms=at,category='missing recording',device=safe_text(w.get('uuid') or w.get('device_id'))),
         metrics={},watch_evidence=None,runs=0,total_mb=None,duration_ms=None,average_mb_per_minute=None,partial=True,
         ranking=dict(score=0,confidence=0,lane='unseen',version=VERSION,scope_service=service,dimensions=[],reasons=['New IP starts at zero; waiting for quality observations.']),
         evaluation_window=None)
+
+
+def traffic_scope(apps,reporter):
+    scope=reporter.get('measurement_scope','unavailable')
+    shared=len(apps)>1 and any(a.get('measurement_scope')=='container_interface' for a in apps)
+    name=SERVICES[reporter['service']][0]
+    if scope=='application':
+        note=name+' application RX + TX. Other app observations stay separate; missing rates remain unavailable.'
+    elif scope=='container_interface':
+        note='One container-interface RX + TX stream reported by '+name+'. '
+        note+='Overlapping app reporters are counted once.' if shared else 'Includes all traffic inside this container.'
+    else:
+        note='Application byte measurements are unavailable.'
+    return dict(measurement_scope=scope,traffic_reporter=reporter['service'],shared_counter=shared,traffic_scope_note=note)
 
 
 def current_allocations(runs,sources,ip_rows,app_state,now,workers=None):
@@ -51,7 +65,6 @@ def current_allocations(runs,sources,ip_rows,app_state,now,workers=None):
                 app['native']=chosen['native'];app['runs']=len({r['run'] for r in matched_runs if r['service']==w['service'] and r.get('run')})
             else:app=pending_app(w,now)
             app.update(total_mb=app.get('metrics',{}).get('total_mb'),duration_ms=app.get('metrics',{}).get('duration_ms'),average_mb_per_minute=app.get('metrics',{}).get('average_mb_per_minute'))
-            app.update(measurement_scope='container_interface',app_isolated_rx_bytes=None,app_isolated_tx_bytes=None)
             apps.append(app)
         # Never sum app reporters. Prefer a fresh existing Grass stream, then a
         # deterministic app name. This is a reporter choice, not a profit score.
@@ -70,12 +83,10 @@ def current_allocations(runs,sources,ip_rows,app_state,now,workers=None):
             profile[k]=copy.deepcopy(chosen.get(k))
         if any(f.get('fresh') or f.get('owner_hold') for f in profile.get('flags',[])):
             profile['ranking']=dict(profile['ranking'],score=EXCLUDED_SCORE,lane='flagged',reasons=['Excluded by owner policy: dated, attributed datacenter evidence. Inspect the classification source and date.'])
-        shared=len({a['service'] for a in apps})>1
         profile.update(id=key,allocation_id=key,group_id=base.get('group_id'),instance=base['instance'],machine=base.get('machine'),
             ip=ip,ips=ips,countries=countries,apps=apps,current=True,current_expires_ms=max(a['current_expires_ms'] for a in apps),
             first_seen_ms=first,last_seen_ms=last,runs=len({(r['service'],r['run']) for r in matched_runs if r.get('run')}),
-            ip_history_summary=prior,measurement_scope='container_interface',traffic_reporter=chosen['service'],shared_counter=shared,
-            traffic_scope_note='One container-interface RX+TX stream, reported by '+SERVICES[chosen['service']][0]+'. '+('Multiple app reporters overlap; true per-app traffic is unavailable.' if shared else 'Includes all traffic inside this container, not provider-sold traffic.'),
+            ip_history_summary=prior,**traffic_scope(apps,chosen),
             recommendation='Observe — evaluator has no replacement permissions',economic_status='No attributable container profit established')
         old_cost=profile.get('cost') or {}
         intervals=[x for x in old_cost.get('intervals',[]) if x.get('group_id')==base.get('group_id') and x.get('instance')==base['instance'] and x.get('machine')==base.get('machine')]
