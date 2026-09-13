@@ -1,0 +1,114 @@
+/* Dedicated additions; geometry, typography, controls and colors come from WS. */
+.ip-evidence-page .ip-nav-mark{display:grid;place-items:center;width:22px;height:22px;flex:none;font:500 12px var(--mono)}
+.ip-metrics-scroll{overflow:auto}
+#ipEvidence .ip-page-title{display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
+#ipEvidence .ip-observation-mode{font:400 10px/16px var(--mono);color:var(--muted)}
+#ipEvidence #totals{grid-template-columns:repeat(8,minmax(140px,1fr))}
+#ipEvidence .metric{border:0;border-right:1px solid var(--line)}
+#ipEvidence .metric:last-child{border-right:0}
+#ipEvidence .ip-filter{flex-wrap:wrap;min-width:0}
+#chartIP{font-weight:400;max-width:260px;overflow-wrap:anywhere}
+#chartApp{width:auto;max-width:190px;min-height:28px}
+#ipEvidence .ip-chart-note{padding:0 12px 10px;margin:0;color:var(--muted);font:400 11px/17px var(--mono);overflow-wrap:anywhere}
+#ipEvidence .history-note{margin:0}
+#ipEvidence .ip-sort-note{font:400 10px/16px var(--mono);color:var(--muted);max-width:390px}
+#ipEvidence .ip-ranking-table{table-layout:auto;min-width:1500px}
+#ipEvidence .ip-ranking-table th,#ipEvidence .ip-ranking-table td{height:36px;padding:0 12px;white-space:nowrap;text-align:left}
+#ipEvidence .ip-ranking-table th{padding:7px 12px}
+#ipEvidence .ip-ranking-table td:nth-child(4),#ipEvidence .ip-ranking-table td:nth-child(5){max-width:210px;overflow:hidden;text-overflow:ellipsis}
+#ipEvidence .ip-ranking-table .record-link{display:inline-block}
+#ipEvidence .ip-score{font:inherit;border:0;padding:0;background:transparent;color:inherit;text-align:left}
+#ipEvidence .ip-score:hover{text-decoration:underline;color:var(--blue)}
+#ipEvidence .ip-score .ip-lane{font-size:10px;color:var(--muted);margin-left:6px}
+#ipEvidence .ip-flagged .ip-score,#ipEvidence .ip-warning{color:var(--status-stale)}
+#ipEvidence .ip-error,.ip-detail .ip-error{color:var(--status-error)}
+.ip-detail{width:min(1100px,calc(100% - 28px))}
+.ip-detail .dialog-head{position:sticky;top:0;background:var(--surface);z-index:2}
+.ip-detail .dialog-head h2{overflow-wrap:anywhere}
+.ip-detail h3{font:400 12px/18px var(--mono);text-transform:uppercase;letter-spacing:.06em;margin:20px 0 12px}
+.ip-detail p,.ip-detail li{font:400 11px/18px var(--mono);color:var(--muted)}
+.ip-detail .detail-grid{margin:14px 0 20px;grid-template-columns:repeat(3,minmax(0,1fr))}
+.ip-detail details{padding:12px 0;border-top:1px solid var(--line)}
+.ip-detail summary{font:400 12px/20px var(--mono);cursor:pointer;overflow-wrap:anywhere}
+.ip-detail .run-summary{display:inline-flex;justify-content:space-between;flex-wrap:wrap;gap:6px 24px;width:calc(100% - 20px)}
+.ip-detail .detail-table{min-width:650px}
+.ip-detail .detail-table td{vertical-align:top;white-space:normal;overflow-wrap:anywhere;max-width:360px}
+.ip-detail .provider{border-left:2px solid var(--line);padding:5px 12px;margin:10px 0;font-size:12px}
+.ip-detail .provider p{margin:4px 0}
+.ip-detail .ip-detail-paging{display:flex;justify-content:space-between;gap:12px;margin:16px 0}
+.ip-detail .ip-detail-paging button{min-height:28px}
+#coverageBody{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:16px;padding-top:12px}
+#coverageBody .source{border-left:1px solid var(--line);padding-left:12px}
+#ipEvidence :focus-visible,.ip-detail :focus-visible{outline:1px solid var(--blue);outline-offset:2px}
+@media(max-width:768px){#ipEvidence .history-controls .ip-sort-note{flex:1 1 100%}#ipEvidence .chart-controls{gap:6px}#chartApp{max-width:170px}.ip-detail .detail-grid{grid-template-columns:1fr 1fr}}
+@media(max-width:480px){.ip-detail .detail-grid{grid-template-columns:1fr}#chartIP{max-width:100%;width:100%}#ipEvidence .view-tabs{gap:0 12px}#ipEvidence .view-tabs .nav-link{font-size:10px}}
+#ipEvidence .ip-filter #ipDetails{width:auto;min-width:68px;flex:none;overflow:visible;text-overflow:clip}
+
+/* Compact allocation/history controls stay inside the existing WDI table header. */
+#ipEvidence [hidden]{display:none!important}
+#ipEvidence .ip-app-filter{margin:4px 0 4px auto;flex:none}
+#ipEvidence .ip-app-filter select{width:auto;max-width:180px;height:28px}
+#ipEvidence .node-sort-controls{margin-left:0}
+#ipEvidence .history-controls{padding:8px 12px;gap:12px}
+#ipEvidence .ip-history-search{flex:0 1 260px;min-width:180px}
+#ipEvidence .history-controls label{font-size:10px}
+#ipEvidence .ip-sort-note{display:block;max-width:none;margin-top:3px}
+#ipEvidence .ip-allocation{display:block;font:400 10px/14px var(--mono);color:var(--muted);max-width:220px;overflow:hidden;text-overflow:ellipsis}
+#ipEvidence .allocation-apps{display:flex;align-items:center;gap:5px;max-width:300px;white-space:nowrap}
+#ipEvidence .allocation-apps span+span:before{content:'·';margin-right:5px;color:var(--muted)}
+#ipEvidence .allocation-apps .measured-app{text-decoration:underline;text-decoration-color:var(--muted);text-underline-offset:3px}
+#ipEvidence .ip-ranking-table td:nth-child(2){padding:0 12px}
+@media(max-width:768px){#ipEvidence .ip-app-filter{margin-left:12px}#ipEvidence .history-controls .ip-history-search{flex:1 1 180px;min-width:0}#ipEvidence .history-controls label{flex:0 1 auto}}
+/* Table-first surface; the one chart is mounted only inside an expanded row. */
+#ipEvidence .ip-table-panel{min-height:calc(100dvh - 170px)}
+#ipEvidence .ip-ranking-table{min-width:1300px}
+#ipEvidence .ip-ranking-table td:nth-child(4){max-width:none}
+#ipEvidence .allocation-apps{gap:5px;max-width:none;flex-wrap:nowrap}
+#ipEvidence .app-badge{display:inline-flex;align-items:center;justify-content:center;flex:none;width:10px;height:10px;padding:0;border:0;border-radius:2px;font-size:0;background:transparent;color:var(--text);cursor:pointer}
+#ipEvidence .app-badge::before{content:'';display:block;flex:0 0 10px;width:10px;height:10px;border-radius:2px;background:var(--app-color)}
+#ipEvidence .app-badge.measured-app{box-shadow:none;text-decoration:none}
+#ipEvidence .ip-ranking-table .ip-expanded-row>td{height:auto;padding:0;white-space:normal;background:var(--surface-muted);border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
+#ipEvidence .ip-inline-chart{position:sticky;left:0;max-width:100%;background:var(--surface);overflow:visible}
+#ipEvidence .ip-inline-chart .panel-head{border-bottom:1px solid var(--line)}
+#ipEvidence .ip-inline-chart .traffic-layout{padding:10px}
+#ipEvidence .ip-inline-chart .chart-controls{margin-left:auto}
+#ipEvidence .record-link[aria-expanded=true]{color:var(--blue)}
+#ipEvidence .ip-inline-chart #closeChart{width:auto;min-width:52px}
+@media(max-width:768px){#ipEvidence .ip-table-panel{min-height:calc(100dvh - 230px)}#ipEvidence .ip-inline-chart .chart-controls{margin-left:0}}
+
+/* App identity colors are shared with chart series through APP_COLORS. */
+#ipEvidence .app-badge{--app-color:#6a756e}
+#ipEvidence .ip-score{display:inline-grid;grid-template-columns:8ch 28px;align-items:center;column-gap:8px;white-space:nowrap;font-variant-numeric:tabular-nums}
+#ipEvidence .score-number{width:8ch;text-align:right}
+#ipEvidence .score-bars{display:inline-flex;align-items:flex-end;gap:2px;height:18px;--score-color:#dc983d}
+#ipEvidence .score-bars i{display:block;width:4px;background:var(--line);border-radius:2px 2px 0 0}
+#ipEvidence .score-bars i:nth-child(1){height:4px}#ipEvidence .score-bars i:nth-child(2){height:7px}#ipEvidence .score-bars i:nth-child(3){height:10px}#ipEvidence .score-bars i:nth-child(4){height:13px}#ipEvidence .score-bars i:nth-child(5){height:16px}
+#ipEvidence .score-bars[data-tone=good]{--score-color:#35ac78}
+#ipEvidence .score-bars[data-tone=bad] i{background:#ca6c6c55}
+#ipEvidence .score-bars .filled{background:var(--score-color)}
+#ipEvidence .ip-score:has([data-tone=bad]){color:#bb4b4b}
+#ipEvidence .score-bars.large{height:32px;gap:3px}
+#ipEvidence .score-bars.large i{width:7px}
+#ipEvidence .score-bars.large i:nth-child(1){height:6px}#ipEvidence .score-bars.large i:nth-child(2){height:12px}#ipEvidence .score-bars.large i:nth-child(3){height:18px}#ipEvidence .score-bars.large i:nth-child(4){height:24px}#ipEvidence .score-bars.large i:nth-child(5){height:30px}
+#ipEvidence .ip-inline-chart .traffic-layout{display:grid;grid-template-columns:minmax(0,1fr) 270px;align-items:start;gap:16px;padding:12px}
+#ipEvidence .ip-profile{min-width:0;padding:12px;border:1px solid var(--line);background:var(--surface-muted)}
+#ipEvidence .profile-heading,#ipEvidence .profile-apps h4{margin:0;font:400 10px/16px var(--mono);text-transform:uppercase;letter-spacing:.09em;color:var(--muted)}
+#ipEvidence .profile-address{margin:4px 0;font:400 10px/15px var(--mono);overflow-wrap:anywhere;color:var(--muted)}
+#ipEvidence .profile-score{display:flex;align-items:center;justify-content:space-between;gap:16px;margin:8px 0}
+#ipEvidence .profile-score strong{font:500 24px/32px var(--mono)}
+#ipEvidence .profile-decision{font:500 12px/18px var(--mono)}
+#ipEvidence .profile-reason{margin:4px 0 10px;font:400 10px/15px var(--mono);color:var(--muted)}
+#ipEvidence .profile-facts{margin:10px 0;font:400 10px/16px var(--mono)}
+#ipEvidence .profile-facts>div{display:flex;justify-content:space-between;align-items:start;gap:10px;padding:3px 0}
+#ipEvidence .profile-facts dt{color:var(--muted);font-weight:400;white-space:nowrap}
+#ipEvidence .profile-facts dd{margin:0;max-width:160px;text-align:right;overflow-wrap:anywhere}
+#ipEvidence .profile-history-link{padding:0;border:0;background:transparent;font:inherit;color:var(--blue);text-decoration:underline;cursor:pointer}
+#ipEvidence .profile-source{margin:7px 0 0;font:400 9px/14px var(--mono);color:var(--muted)}
+#ipEvidence .profile-apps{margin-top:12px;padding-top:10px;border-top:1px solid var(--line)}
+#ipEvidence .profile-apps h4{margin-bottom:5px}
+#ipEvidence .profile-app{display:flex;align-items:center;justify-content:space-between;width:100%;padding:5px 0;gap:10px;border:0;background:transparent;color:var(--text);font:400 10px/14px var(--mono);text-align:left;cursor:pointer}
+#ipEvidence .profile-app[aria-pressed=true]{font-weight:600}
+#ipEvidence .profile-app-name{display:inline-flex;align-items:center;gap:6px;white-space:nowrap}
+#ipEvidence .profile-app-name i{width:8px;height:8px;background:var(--app-color)}
+#ipEvidence .profile-app-state{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--muted)}
+@media(max-width:900px){#ipEvidence .ip-inline-chart .traffic-layout{grid-template-columns:minmax(0,1fr)}#ipEvidence .profile-apps{display:grid;grid-template-columns:1fr 1fr;gap:0 16px}#ipEvidence .profile-apps h4{grid-column:1/-1}}

@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>RP · Bandwidth test</title>
+<style>
+*{box-sizing:border-box}body{margin:0;font:14px system-ui,sans-serif;color:#202327;background:#fff}main{max-width:1400px;margin:auto;padding:24px}header{display:flex;justify-content:space-between;align-items:baseline;gap:16px}h1{font-size:24px;margin:0}nav{display:flex;gap:18px;align-items:center;margin:20px 0}a{color:#205a85}p{line-height:1.5}.muted{color:#60676f;font-size:13px}.error{color:#a52323}.ok{color:#167044}.notice{padding:10px 0;font-weight:600}#chart{height:190px;display:flex;align-items:flex-end;gap:3px;overflow-x:auto;padding:14px 0 26px;border-bottom:1px solid #ccd1d5}#chart button{flex:1;min-width:8px;max-width:64px;border:0;background:#658fa7;padding:0;cursor:pointer;position:relative}#chart button.partial{background:#a6beca}#chart button.selected{background:#163f58;outline:2px solid #163f58;outline-offset:2px}#chart button:focus-visible{outline:3px solid #0b2230;outline-offset:2px}#chart button span{position:absolute;top:100%;left:50%;transform:translateX(-50%);font-size:10px;line-height:25px;white-space:nowrap;color:#535b61}#chartEmpty{padding:45px 0;color:#60676f}.table-scroll{overflow-x:auto}table{width:100%;min-width:860px;border-collapse:collapse;text-align:left}th,td{padding:12px 10px;border-bottom:1px solid #e4e7e9;white-space:nowrap}th{font-size:12px;color:#555e65;font-weight:600}th.num,td.num{text-align:right;font-variant-numeric:tabular-nums}code{font-size:12px}.status{font-weight:600}.reason{display:block;font-size:11px;color:#6b4e31;max-width:260px;white-space:normal}.selected-note{margin:18px 0 8px;font-weight:600}footer{margin-top:20px;color:#60676f;font-size:12px}button:disabled{cursor:default}@media(max-width:600px){main{padding:16px}header{display:block}nav{gap:12px;flex-wrap:wrap}#chart{height:160px}}
+</style></head><body><main>
+<header><h1>RP</h1><span id="connection" class="muted" role="status">Loading recorder…</span></header>
+<nav><a href="/#hg1">Honeygain</a><a href="/#ps1">PacketStream</a><strong>RP</strong><a href="https://portal.salad.com/organizations/ssh2/projects/default/containers/rp-test-us" target="_blank" rel="noreferrer">Salad deployment</a><a href="https://repocket.com/dashboard/share-internet" target="_blank" rel="noreferrer">RP earnings</a></nav>
+<p id="summary">Waiting for the first worker records.</p><p id="error" class="notice error" hidden></p>
+<p class="muted">Network traffic per minute · click a bar to see each worker’s contribution. Light bars contain a partial minute.</p>
+<div id="chart" aria-label="Repocket network traffic by minute"></div><p id="chartEmpty">Waiting for the first saved minute. Startup traffic is recorded too.</p>
+<p id="selected" class="selected-note">Current workers</p>
+<div class="table-scroll"><table><thead><tr><th>Worker</th><th>Status</th><th>Public IP</th><th class="num">Selected minute MB</th><th class="num">Latest MB/min</th><th class="num">Run total MB</th><th class="num">Run age</th><th class="num">Source age</th></tr></thead><tbody id="workers"></tbody></table></div>
+<footer><p>Measured container receive + send bytes include connection overhead. They are not the same as Repocket’s paid traffic. Cloud workers handle retries themselves; this page reads saved records.</p><p id="disk"></p><p id="provider"></p></footer>
+<script>
+const $=id=>document.getElementById(id);let data=null,selected=null,busy=false,followLatest=true,failed=false;
+const number=v=>Number.isFinite(v)?v.toLocaleString(undefined,{minimumFractionDigits:3,maximumFractionDigits:3}):'—';
+const clock=ms=>new Date(ms).toLocaleTimeString(undefined,{hour:'2-digit',minute:'2-digit',hour12:false});
+function duration(ms){if(!Number.isFinite(ms)||ms<0)return '—';const seconds=Math.floor(ms/1000);return seconds<60?seconds+'s':Math.floor(seconds/60)+'m '+seconds%60+'s';}
+function cell(row,text,cls=''){const c=document.createElement('td');c.className=cls;c.textContent=text;row.append(c);return c;}
+function render(){
+ if(!data)return;const now=Date.now(),recorderStale=failed||Boolean(data.error)||now-data.generated_ms>90000;
+ $('error').hidden=!data.error&&!failed;$('error').textContent=failed?'Recorder unavailable. Last saved measurements are shown.':data.error||'';
+ $('connection').textContent=recorderStale?'Recorder needs attention':'Recorder updated '+duration(now-data.generated_ms)+' ago';
+ const connected=(data.workers||[]).filter(w=>w.phase==='connected'&&w.salad_state==='running'&&now-w.source_ms<60000&&!recorderStale).length;
+ const currentSources=(data.workers||[]).filter(w=>w.source_ms&&now-w.source_ms<60000).length;const connectionText=recorderStale||(!currentSources&&data.running)?'connection status delayed':`${connected} connected`;
+ $('summary').textContent=`${data.running||0} containers running / ${data.desired||10} requested · ${connectionText} · ${number(data.total_network_mb)} MB recorded`;
+ const minutes=data.minutes||[],latestSaved=[...minutes].reverse().find(m=>Number.isFinite(m.mb))||minutes.at(-1);if(followLatest||selected===null||!minutes.some(m=>m.time_ms===selected))selected=latestSaved?.time_ms??null;
+ const chosen=minutes.find(m=>m.time_ms===selected),max=Math.max(0.001,...minutes.map(m=>m.mb));$('chart').replaceChildren();$('chartEmpty').hidden=minutes.length>0;
+ minutes.forEach((minute,index)=>{const button=document.createElement('button');button.className=(minute.partial?'partial ':'')+(minute.time_ms===selected?'selected':'');button.style.height=Math.max(2,(minute.mb||0)/max*140)+'px';if(minute.mb===null){button.style.background='transparent';button.style.borderBottom='1px dashed #999';}button.title=clock(minute.time_ms)+' · '+(minute.mb===null?'no measurement':number(minute.mb)+' MB')+(minute.partial&&minute.mb!==null?' · partial minute':'');button.setAttribute('aria-label',button.title);button.onclick=()=>{selected=minute.time_ms;followLatest=minute.time_ms===latestSaved?.time_ms;render();};if(minutes.length<15||index%Math.ceil(minutes.length/10)===0){const label=document.createElement('span');label.textContent=clock(minute.time_ms);button.append(label);}$('chart').append(button);});
+ $('selected').textContent=chosen?clock(chosen.time_ms)+'–'+clock(chosen.time_ms+60000)+' · '+(chosen.mb===null?'no measurement recorded':number(chosen.mb)+' MB recorded'):'Current workers';
+ const contributions=new Map((chosen?.contributions||[]).map(c=>[c.run,c]));const workers=[...(data.workers||[])];const currentRuns=new Set(workers.map(w=>w.run));
+ for(const c of contributions.values())if(!currentRuns.has(c.run))workers.push({...c,status:'replaced',phase:'replaced',current:false});
+ while(workers.filter(w=>w.current!==false).length<(data.desired||10))workers.push({machine:'Awaiting allocation',status:'allocating',current:true});
+ $('workers').replaceChildren();
+ for(const worker of workers){const row=document.createElement('tr');const id=cell(row,worker.machine==='Awaiting allocation'?worker.machine:(worker.machine||'').slice(0,8));id.title=worker.machine||'';
+  const age=worker.source_ms?now-worker.source_ms:null;let status=worker.status||'starting';if(worker.current!==false&&worker.source_ms&&(recorderStale||age>60000||age< -10000))status='stale';
+  const state=cell(row,status.replaceAll('_',' '),'status '+(status==='connected'?'ok':/error/.test(status)?'error':''));if(worker.reason){const note=document.createElement('span');note.className='reason';note.textContent=worker.reason;state.append(note);}
+  cell(row,worker.ip||'—');cell(row,number(contributions.get(worker.run)?.mb),'num');cell(row,number(worker.last_mb_per_minute),'num');cell(row,number(worker.total_mb),'num');cell(row,duration(worker.started_ms?now-worker.started_ms:null),'num');cell(row,duration(age),'num');$('workers').append(row);
+ }
+ $('disk').textContent=`${data.record_count||0} saved records · ${number((data.database_bytes||0)/1e6)} MB on disk · ${number((data.saved_bytes_last_minute||0)/1000)} KB of new record data saved in the last minute.`;
+ if(data.unbucketed_intervals)$('disk').textContent+=` ${data.unbucketed_intervals} intervals crossed minute boundaries; their bytes remain in totals.`;
+ $('provider').textContent=data.provider?`Repocket snapshot: ${data.provider.today_traffic_text||data.provider.traffic_text} shared today · ${data.provider.today_earned_text||data.provider.earned_text} earned today · observed ${new Date(data.provider.observed_ms).toLocaleString()}. Provider readings are account totals.`:'';
+}
+async function refresh(){if(busy)return;busy=true;try{const response=await fetch('/api/repocket',{cache:'no-store'});if(!response.ok)throw Error();data=await response.json();failed=false;render();}catch{failed=true;render();if(!data)$('connection').textContent='Waiting for Repocket recorder';}finally{busy=false;}}
+refresh();setInterval(refresh,5000);
+</script></main></body></html>

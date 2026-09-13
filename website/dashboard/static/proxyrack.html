@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>PR — SSH1</title><style>
+body{font:15px system-ui,sans-serif;color:#17212a;background:#fff;margin:0;padding:24px}main{max-width:1450px;margin:auto}h1{font-size:24px;margin:0 0 8px}nav{display:flex;gap:22px;margin:20px 0}a{color:#165b9a}p{line-height:1.5}.muted{color:#5e6a75;font-size:13px}.error{color:#a22121}.summary{font-size:17px;font-variant-numeric:tabular-nums}.chart{border:1px solid #ddd;padding:12px;margin:20px 0}canvas{width:100%;height:280px;display:block}select{font:inherit;padding:5px}table{border-collapse:collapse;width:100%;font-variant-numeric:tabular-nums}th,td{border-bottom:1px solid #e2e6ea;padding:12px 8px;text-align:right;white-space:nowrap}th{font-size:12px;color:#596774}th:first-child,td:first-child,th:nth-child(2),td:nth-child(2),th:nth-child(3),td:nth-child(3){text-align:left}.scroll{overflow-x:auto}.stale{color:#936000}.details{font-size:12px;color:#687580;max-width:260px;white-space:normal}footer{margin-top:22px;font-size:13px;color:#596774}@media(max-width:650px){body{padding:14px}h1{font-size:21px}.summary{font-size:15px}canvas{height:230px}}
+</style></head><body><main>
+<h1>PR — SSH1</h1><div class="muted" id="connection">Loading recorder…</div>
+<nav aria-label="Services"><a href="/#hg1">Honeygain</a><a href="/#ps1">PacketStream</a><strong>PR</strong></nav>
+<p class="summary" id="summary">Waiting for the first recorded reading.</p><p id="notice" class="error"></p>
+<div class="chart"><label>Recorded network traffic <select id="range"><option value="hour">Last hour</option><option value="all">Since test started</option></select></label><canvas id="chart" role="img" aria-label="Cumulative recorded ProxyRack network traffic in megabytes"></canvas><div class="muted">Cumulative RX + TX reported by the containers. Measured after the client download; includes connection and registration traffic. Credited bandwidth is separate.</div></div>
+<div class="scroll"><table><thead><tr><th>Worker</th><th>Container</th><th>PR / IP</th><th>Network MB</th><th>Last interval MB</th><th>Seconds</th><th>MB/min</th><th>Credited MB</th><th>Last sample</th></tr></thead><tbody id="workers"></tbody></table></div>
+<p class="muted" id="providerNote"></p><footer>Each container handles client restart/reallocation through Salad. This Mac only records and displays readings. Minute records survive replacement; gaps are not filled with invented traffic.</footer>
+</main><script>
+const $=id=>document.getElementById(id);let data=null,busy=false,failed=false;
+const number=(v,d=3)=>typeof v==='number'&&Number.isFinite(v)?v.toLocaleString(undefined,{maximumFractionDigits:d}):'—';
+const age=v=>typeof v==='number'&&v>=0?(v<60000?Math.floor(v/1000)+'s':Math.floor(v/60000)+'m'):'—';
+const time=v=>new Date(v).toLocaleTimeString(undefined,{hour:'2-digit',minute:'2-digit'});
+function plot(){
+ const canvas=$('chart'),ratio=window.devicePixelRatio||1,w=canvas.clientWidth,h=canvas.clientHeight;
+ canvas.width=w*ratio;canvas.height=h*ratio;const c=canvas.getContext('2d');c.scale(ratio,ratio);c.clearRect(0,0,w,h);
+ const end=Date.now(),all=data?.timeline||[],start=$('range').value==='hour'?end-3600000:(all[0]?.time_ms||end-60000);
+ let points=all.filter(p=>p.time_ms>=start);const before=all.filter(p=>p.time_ms<start).at(-1);if(before)points.unshift({...before,time_ms:start});
+ const stride=Math.max(1,Math.ceil(points.length/1500));points=points.filter((p,i)=>i%stride===0||i===points.length-1);
+ const left=65,right=w-15,top=20,bottom=h-36,min=points.length?Math.min(...points.map(p=>p.mb)):0,max=points.length?Math.max(...points.map(p=>p.mb)):0,span=Math.max(max-min,0.001);
+ c.font='12px system-ui';c.textAlign='right';for(let i=0;i<=4;i++){const y=bottom-(bottom-top)*i/4;c.strokeStyle='#e4e8eb';c.beginPath();c.moveTo(left,y);c.lineTo(right,y);c.stroke();c.fillStyle='#586570';c.fillText(number(min+span*i/4,3),left-8,y+4);}
+ c.textAlign='left';c.fillText('MB',12,14);c.fillText(time(start),left,h-9);c.textAlign='right';c.fillText(time(end),right,h-9);
+ if(!points.length){c.textAlign='center';c.fillText('First minute has not been recorded yet.',w/2,h/2);return;}
+ const x=p=>left+(p.time_ms-start)/Math.max(1,end-start)*(right-left),y=p=>bottom-(p.mb-min)/span*(bottom-top);
+ c.strokeStyle='#176b9c';c.lineWidth=2;c.beginPath();points.forEach((p,i)=>{if(i){c.lineTo(x(p),y(points[i-1]));c.lineTo(x(p),y(p));}else c.moveTo(x(p),y(p));});c.stroke();
+}
+function render(){if(!data)return;const delay=Math.max(0,Date.now()-data.generated_ms),live=!failed&&delay<60000&&!data.cloud_error;
+ const reporting=data.workers.filter(w=>w.fresh&&w.last_sample_ms&&Date.now()-w.last_sample_ms<150000&&live).length;
+ const online=data.workers.filter(w=>w.provider_online&&w.provider_age_ms+delay<240000).length;
+ $('connection').textContent=(live?'Recorder updating':'Recorder stale')+' · last update '+age(delay)+' ago';$('connection').className=live?'muted':'error';
+ $('summary').textContent=online+'/'+data.requested+' online at ProxyRack · '+reporting+'/'+data.requested+' reporting traffic · Network '+number(data.network_mb)+' MB · Credited '+number(data.credited_mb)+' MB · Balance '+(data.balance||'—');
+ $('notice').textContent=data.cloud_error||(!live?'The recorder has stopped updating. Values below are the last observations.':'');
+ $('workers').replaceChildren();for(const w of data.workers){const tr=document.createElement('tr'),td=document.createElement('td'),a=document.createElement('a');a.textContent=w.name.replace('proxyrack-','PR ');a.href=w.group_url;a.target='_blank';a.rel='noopener noreferrer';td.append(a);tr.append(td);
+  const pFresh=w.provider_age_ms!==null&&w.provider_age_ms+delay<240000,rawFresh=w.fresh&&w.last_sample_ms&&Date.now()-w.last_sample_ms<150000&&live;
+  const values=[live?w.salad_state:'Last: '+w.salad_state,(pFresh?'':'Last: ')+w.provider_status,number(w.network_mb),number(w.interval_mb),number(w.interval_seconds,1),number(w.mb_per_minute),number(w.credited_mb),age(w.sample_age_ms===null?null:w.sample_age_ms+delay)];
+  values.forEach((v,i)=>{const cell=document.createElement('td');cell.textContent=v;if((i>=2&&i<=5)&&!rawFresh)cell.className='stale';if(i===1&&(w.provider_error||!pFresh)){const note=document.createElement('div');note.className='details';note.textContent=w.provider_error||'Provider status is stale';cell.append(note);}if(i===6){const note=document.createElement('div');note.className='details';note.textContent=w.bandwidth_state||'Provider reading pending';cell.append(note);}tr.append(cell);});$('workers').append(tr);}
+ $('providerNote').textContent='Credited bandwidth received for '+data.credited_devices+'/'+data.requested+' devices. ProxyRack reports gigabytes; this page converts them to decimal MB. Provider readings may update several minutes after traffic occurs. Rates are for the last measured interval.';plot();
+}
+async function refresh(){if(busy)return;busy=true;try{const r=await fetch('/api/proxyrack',{cache:'no-store'});if(!r.ok)throw Error();data=await r.json();failed=false;render();}catch(e){failed=true;$('connection').textContent='Cannot reach the ProxyRack recorder';$('connection').className='error';if(data)render();}finally{busy=false;}}
+$('range').addEventListener('change',plot);window.addEventListener('resize',plot);setInterval(refresh,3000);refresh();
+</script></body></html>

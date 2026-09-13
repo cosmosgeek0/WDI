@@ -1,0 +1,49 @@
+[Unit]
+Description=Salad dashboard
+Wants=network-online.target
+After=network-online.target
+StartLimitIntervalSec=0
+
+[Service]
+User=salad-ui
+Group=salad-ui
+WorkingDirectory=/run/salad-ui-code
+Environment=HOME=/home/salad
+Environment=PYTHONPATH=/run/salad-ui-code
+Environment=PS_ORGANIZATION=hyperlane
+Environment=PS_PROJECT=default
+Environment=PS_GROUP=ps-test-us
+ExecStart=/usr/bin/python3 -B -m dashboard.server --data-dir /home/salad/.hg1
+Restart=always
+RestartSec=5
+RuntimeDirectory=salad-ui-code salad-ui
+RuntimeDirectoryMode=0750
+UMask=0077
+NoNewPrivileges=yes
+CapabilityBoundingSet=
+PrivateDevices=yes
+PrivateTmp=yes
+ProtectClock=yes
+ProtectControlGroups=yes
+ProtectHome=read-only
+ProtectHostname=yes
+ProtectKernelLogs=yes
+ProtectKernelModules=yes
+ProtectKernelTunables=yes
+ProtectSystem=strict
+IPAddressDeny=any
+RestrictAddressFamilies=AF_UNIX
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+SystemCallArchitectures=native
+ReadOnlyPaths=/run/salad-ui-code /home/salad/.hg1
+ReadWritePaths=/home/salad/.hg1/packetstream/provider-observations.jsonl
+InaccessiblePaths=/opt/wdi -/opt/salad -/etc/cloudflared-salad -/run/salad-credentials
+BindReadOnlyPaths=/opt/wdi/website/dashboard:/run/salad-ui-code/dashboard
+BindReadOnlyPaths=/opt/wdi/website/proxyrack.py:/run/salad-ui-code/proxyrack.py
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,40 @@
+[Unit]
+Description=Bounded public-IP classification lookup queue
+After=network-online.target salad-ip-evidence.service
+Wants=network-online.target
+StartLimitIntervalSec=0
+
+[Service]
+User=salad-ui
+Group=salad-ui
+ExecStart=/usr/bin/python3 -B /run/salad-ip-lookup/ip_lookup.py
+Environment=HOME=/nonexistent
+Restart=always
+RestartSec=15
+RuntimeDirectory=salad-ip-lookup
+RuntimeDirectoryMode=0750
+StateDirectory=salad-ip-enrichment
+StateDirectoryMode=0750
+UMask=0027
+MemoryMax=64M
+NoNewPrivileges=yes
+CapabilityBoundingSet=
+PrivateDevices=yes
+PrivateTmp=yes
+ProtectHome=yes
+ProtectSystem=strict
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+RestrictNamespaces=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+RestrictSUIDSGID=yes
+LockPersonality=yes
+IPAddressDeny=169.254.169.254/32 fd00:ec2::254/128
+ReadOnlyPaths=/var/lib/salad-ip-evidence
+InaccessiblePaths=/opt/wdi -/opt/salad -/etc/cloudflared-salad -/run/salad-credentials -/var/lib/amazon/ssm
+BindReadOnlyPaths=/opt/wdi/website/dashboard/ip_lookup.py:/run/salad-ip-lookup/ip_lookup.py
+
+[Install]
+WantedBy=multi-user.target
