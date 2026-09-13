@@ -32,6 +32,8 @@ The existing controller runs as `grass.service` from `/opt/wdi` on Mumbai
 `python3 /opt/wdi/grass.py --status` to see its last observed allocations, IPs,
 device IDs, provider count and data age. Moving this local folder does not change
 the deployed paths. `GRASS_GROUP` in `/etc/wdi/grass.env` selects managed groups.
+SSH commands execute the installed session module; source code is not transferred
+with each request. Runtime identity and source-version checks still apply.
 
 The Salad group supplies `GRASS_ACCOUNT_ID` and the runtime Repocket credential.
 The supervisor removes that credential from its environment and passes it only
@@ -105,3 +107,8 @@ Grass retained the same device and count 451. Both meters returned valid distinc
 counters, and the new-Mumbai website stored valid intervals for each app under
 the same container instance. The final `combined_pilot_verified` evidence includes
 source hashes and measurements. No 10/50-replica scaling or public cutover was done.
+
+Version 9 removes the unused startup/seed flags and executes the installed RPC
+module. The live cleanup check retained Grass count 451 and valid separate app
+records. An isolated loopback check measured exactly 1 GiB sent and 1 GiB received
+in 28.216 seconds; it was not provider traffic and was not added to the graphs.

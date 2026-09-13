@@ -232,11 +232,10 @@ sub valid_ipv4 {
     return !grep {$_ > 255 || (length($_) > 1 && /^0/)} split /\./, $value;
 }
 sub recovery_action {
-    my ($health, $saved, $at, $seed_ready) = @_;
+    my ($health, $saved, $at) = @_;
     my $state = $health->{state};
     if ($state eq 'connected') {
         delete $saved->{bad_since_ms};
-        $saved->{zero_quality_reads} = 0;
         $saved->{healthy_since_ms} //= $at;
         $saved->{attempts} = 0 if $at - $saved->{healthy_since_ms} >= $HEALTHY_RESET_MS;
         return undef;
@@ -245,17 +244,14 @@ sub recovery_action {
     if ($state eq 'unknown' || $state eq 'network_rejected' || $state eq 'login_required'
         || ($state eq 'offline' && ($health->{failure_source} // '') ne 'native_disconnect')) {
         delete $saved->{bad_since_ms};
-        $saved->{zero_quality_reads} = 0;
         return undef;
     }
     if (($saved->{bad_state} // '') ne $state) {
         delete $saved->{bad_since_ms};
-        $saved->{zero_quality_reads} = 0;
     }
     $saved->{bad_state} = $state;
     $saved->{bad_since_ms} //= $at;
     return undef if $at < ($saved->{next_action_ms} // 0);
-    $saved->{zero_quality_reads} = 0;
     my $grace = $state eq 'client_stalled' ? 0 : $state eq 'client_missing' ? 20_000 : $OFFLINE_GRACE_MS;
     return undef if $at - $saved->{bad_since_ms} < $grace;
     if (($saved->{attempts} // 0) >= $MAX_RESTARTS) {
@@ -355,7 +351,6 @@ sub sample {
         container_tx => defined($container_tx) ? 0+$container_tx : undef,
         container_counter_source_ms => $wall,
         health => $ctx->{health}, provider => $ctx->{provider}, recovery => $ctx->{recovery},
-        replacement_ready => $ctx->{seed_ready} ? JSON::PP::true : JSON::PP::false,
         final => $final ? JSON::PP::true : JSON::PP::false});
 }
 sub main {
@@ -390,13 +385,12 @@ sub main {
         container_run => $container_run, run => $container_run . ':' . now_ms(), output => $output,
         runtime => "$boot_id:$stat[19]",
         seq => 0, recovery => $saved, health => {state => 'starting', observed_ms => now_ms()},
-        seed_ready => 0, http => HTTP::Tiny->new(timeout => 8, verify_SSL => 1, agent => 'WDI/1.0')};
+        http => HTTP::Tiny->new(timeout => 8, verify_SSL => 1, agent => 'WDI/1.0')};
     my $quit = 0;
     $SIG{TERM} = sub { $quit = 1 };
     $SIG{INT} = sub { $quit = 1 };
     my ($next_health, $next_sample, $failures) = (0, 0, 0);
-    emit($ctx, 'grass_event', {event => 'worker_started', policy => $POLICY,
-        replacement_ready => $ctx->{seed_ready} ? JSON::PP::true : JSON::PP::false});
+    emit($ctx, 'grass_event', {event => 'worker_started', policy => $POLICY});
     while (!$quit) {
         my $at = now_ms();
         if ($at >= $next_sample) {
@@ -432,7 +426,7 @@ sub main {
                 $saved->{error} = 'The requested app restart has no confirmed replacement process and connection yet';
                 emit($ctx, 'grass_event', {event => 'unconfirmed', action => 'restart_app', requested_ms => $saved->{requested_ms}});
             }
-            my $action = recovery_action($health, $saved, now_ms(), $ctx->{seed_ready});
+            my $action = recovery_action($health, $saved, now_ms());
             perform_action($ctx, $action) if defined $action;
             save_recovery($ctx);
         }

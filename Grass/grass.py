@@ -12,7 +12,6 @@ import io
 import ipaddress
 import json
 import os
-import shlex
 import sqlite3
 import subprocess
 import time
@@ -33,8 +32,7 @@ from session import IDENTITY_KEYS, LEASE_SECONDS, compatible, decoded, identity
 REGION = 'ap-south-1'
 SECRET = 'wdi/salad-access'
 API = 'https://api.salad.com/api/public/organizations/cosmosgeeketh/projects/default/containers'
-SOURCE = Path(__file__).with_name('session.py').read_text()
-SOURCE_SHA = hashlib.sha256(SOURCE.encode()).hexdigest()
+SOURCE_SHA = hashlib.sha256(Path(__file__).with_name('session.py').read_bytes()).hexdigest()
 
 
 def lease_clock():
@@ -332,8 +330,7 @@ def exchange(instance, access, payload, before_send=None):
                 line, buffer = buffer.split(b'\n', 1)
                 line = line.rstrip(b'\r')
                 if line == b'WDI_SHELL_READY' and not program_sent:
-                    program = 'import base64;exec(base64.b64decode(' + repr(base64.b64encode(SOURCE.encode()).decode()) + '))'
-                    channel.sendall('exec python3 -c ' + shlex.quote(program) + '\n')
+                    channel.sendall('exec python3 /opt/grass-private/session.py\n')
                     program_sent = True
                 elif line == b'WDI_READY' and program_sent and not sent:
                     if before_send:

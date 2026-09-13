@@ -6,8 +6,8 @@
       "GRASS_ACCOUNT_ID": "3J6jD6FnED85tCL9fK1tAl0r014",
       "RP_API_KEY": "<runtime credential recovered from Repocket/state/account.enc>"
     },
-    "hash": "sha256:c5fa61d97bbedb3cd17aea01f42135f25ae5d7d9488ef34644c3707ea2d04fd9",
-    "image": "163092837436.dkr.ecr.ap-south-1.amazonaws.com/grass-desktop:combined-20260913-c5fa61d97bbe",
+    "hash": "sha256:1b52f43837f69529a7a0975fb54c200231b3641db54c371383de4aaa9e2c21f8",
+    "image": "163092837436.dkr.ecr.ap-south-1.amazonaws.com/grass-desktop:combined-20260913-1b52f43837f6",
     "image_caching": false,
     "resources": {
       "cpu": 1,
@@ -15,7 +15,7 @@
       "memory": 2048,
       "shm_size": 256
     },
-    "size": 287599837
+    "size": 287616271
   },
   "country_codes": [],
   "create_time": "2026-09-12T19:30:59.3058948+00:00",
@@ -42,6 +42,6 @@
   "restart_policy": "always",
   "scaling-actions": [],
   "scheduled-scaling-enabled": false,
-  "update_time": "2026-09-13T03:17:57.6425669+00:00",
-  "version": 8
+  "update_time": "2026-09-13T03:53:48.4556405+00:00",
+  "version": 9
 }

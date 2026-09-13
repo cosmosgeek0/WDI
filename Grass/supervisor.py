@@ -86,7 +86,6 @@ def main():
                 raise ValueError('executable_hash_mismatch')
         if not repocket_key:
             raise ValueError('repocket_login_required')
-        (RUN/'grass-seed-ready').unlink(missing_ok=True)
         # Waiting never exits PID 1 or manufactures a replacement identity.
         waiting=None
         while not stop.is_set():

@@ -234,26 +234,6 @@ def starting(path=None):
         yield observed
 
 
-def seed(path, raw):
-    # Account login alone must never create a replacement installation.
-    requested = decoded(json.loads(raw).get('wynd:user_id')) if raw else None
-    last_reason = None
-    while True:
-        try:
-            if grass_processes():
-                raise ValueError('installation_already_running')
-            existing = ready(path)
-            if requested and existing['account'] != requested:
-                raise ValueError('configured_account_changed')
-            return False
-        except (OSError, ValueError, KeyError) as error:
-            reason = str(error) if isinstance(error, ValueError) else 'identity_restore_required'
-            if reason != last_reason:
-                print('GRASS_IDENTITY ' + json.dumps({'event': 'waiting', 'reason': reason}), flush=True)
-                last_reason = reason
-            time.sleep(2)
-
-
 def public_ip():
     query = urllib.request.Request('https://api.ipify.org?format=json', headers={'User-Agent': 'WDI/1.0'})
     with urllib.request.urlopen(query, timeout=5) as response:
