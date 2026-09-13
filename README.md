@@ -20,12 +20,20 @@ from this GitHub package.
 | `Grass/state/account-session.enc`, `Repocket/state/account.enc` | Encrypted credentials needed to restore account access. |
 | `Grass/configuration/`, `Grass/recovery.json`, checksum files | Current launch settings, required AWS secret version, checkpoint time and integrity checks. |
 
-The large archives are assets of the private
-[recovery-20260913 release](https://github.com/cosmosgeek0/WDI/releases/tag/recovery-20260913).
-Download all four `.tar` assets while signed into GitHub and place them at the
-paths above. The local WDI folder already contains them. GitHub's normal source
-ZIP alone does not contain release assets; source plus these four assets is the
-complete recovery package. Encrypted state and the static tracer are committed.
+The image archives are committed at these paths using **Git LFS**. To recover
+through Git, install [Git LFS](https://git-lfs.com/), then:
+
+```sh
+git lfs install
+git clone git@github.com:cosmosgeek0/WDI.git
+cd WDI
+git lfs pull
+```
+
+A clone without Git LFS contains small pointer files instead of the images.
+The checksum check below detects that incomplete download. No separate image
+registry or browser extension is needed to retrieve the committed image files.
+Encrypted state and the static tracer are ordinary Git files.
 
 From WDI, check the complete download:
 

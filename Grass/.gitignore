@@ -1,4 +1,4 @@
-# Large archives are GitHub release assets; encrypted checkpoints are committed.
+# Large runtime archives use Git LFS; encrypted checkpoints are committed.
 images/*
 comparison/
 __pycache__/
